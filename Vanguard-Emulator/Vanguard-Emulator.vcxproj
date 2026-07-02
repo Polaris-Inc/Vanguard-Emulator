@@ -144,8 +144,10 @@
     <ClCompile Include="Vanguard-Emulator.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="emulation\connection_hook.hpp" />
     <ClInclude Include="security\encryption.hpp" />
     <ClInclude Include="session\session.hpp" />
+    <ClInclude Include="structs\vanguard.hpp" />
     <ClInclude Include="utility\console.hpp" />
     <ClInclude Include="utility\utilities.hpp" />
   </ItemGroup>

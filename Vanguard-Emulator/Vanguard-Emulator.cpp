@@ -25,16 +25,18 @@
 
 #include <security/encryption.hpp>
 
+std::atomic<bool> g_Running{ true };
+std::atomic<bool> gConnectionFound = false;
+
+#include <structs/vanguard.hpp>
+
 #include <utility/console.hpp>
 #include <utility/utilities.hpp>
 
+#include <emulation/connection_hook.hpp>
 #include <session/session.hpp>
 
 std::string console_title = Encrypt("Lunaris");
-
-std::string g_sid = "";
-std::string g_gametoken = "";
-std::string g_region = "";
 
 int wmain()
 {
@@ -57,7 +59,10 @@ int wmain()
 
 	printf(Encrypt("\n"));
 
-
+	if (PipeExists())
+	{
+		std::wcout << L"Pipe exists!\n";
+	}
 
 	Sleep(5000);
 

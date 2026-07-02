@@ -32,5 +32,11 @@
     <ClInclude Include="utility\console.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="emulation\connection_hook.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="structs\vanguard.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
