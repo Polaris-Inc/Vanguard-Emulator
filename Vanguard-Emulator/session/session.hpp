@@ -78,7 +78,7 @@ namespace session
         std::string json_body = build_auth_payload(vanguard::game);
 
         std::wstring api_headers = L"Content-Type: application/json\r\n";
-        std::wstring api_host = riotgames::utf8_to_wstring(std::string(API_HOST));
+        std::wstring api_host = utf8_to_wstring(std::string(API_HOST));
 
         std::pair<int, std::string> api_response = perform_http_request(
             api_host, 31133, L"", L"POST", json_body, api_headers, false);
@@ -128,7 +128,7 @@ namespace session
             return;
         }
 
-        std::vector<uint8_t> vg_payload_vec = riotgames::base64_decode(data_match[1].str());
+        std::vector<uint8_t> vg_payload_vec = base64_decode(data_match[1].str());
 
         if (vg_payload_vec.empty())
         {
@@ -144,7 +144,7 @@ namespace session
             " Bytes"
         );
 
-        std::wstring gw_host = riotgames::utf8_to_wstring(vanguard::region + ".vg.ac.pvp.net");
+        std::wstring gw_host = utf8_to_wstring(vanguard::region + ".vg.ac.pvp.net");
 
         std::wstring gw_headers = L"Content-Type: application/x-protobuf\r\n"
             L"User-Agent: Vanguard/1.0.0.0 (Windows NT 10.0; Win64; x64)\r\n"

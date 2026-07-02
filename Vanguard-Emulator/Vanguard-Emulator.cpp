@@ -39,6 +39,22 @@ std::atomic<bool> gConnectionFound = false;
 
 std::string console_title = Encrypt("Lunaris");
 
+void keyboard_listener() 
+{
+	while (g_Running.load())
+	{
+		if (GetAsyncKeyState(VK_F5) & 0x8000)
+		{
+			if (vanguard::g_SessionReady)
+			{
+				session::create_session_payload();
+			}
+			Sleep(1000);
+		}
+		Sleep(50);
+	}
+}
+
 int wmain()
 {
 	if (!EnableDebugPrivilege())
@@ -77,6 +93,7 @@ int wmain()
 	}
 
 	std::thread(connection::create_connection).detach();
+	std::thread(keyboard_listener).detach();
 
 	static bool found_emulation_layer = false;
 
