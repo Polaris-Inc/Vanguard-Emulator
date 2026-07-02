@@ -353,12 +353,17 @@ void handle_connection(HANDLE connection)
         switch (vanguard_header->vMessageType)
         {
         case MessageType::Heartbeat:
+        {
             response = create_heartbeat_response(buffer.data(), bytesRead);
             break;
+        }
         case MessageType::ServerAck:
+        {
             response = create_server_ack(vanguard_header->vMagic);
             break;
+        }
         case MessageType::AuthRequest:
+        {
             vanguard::game_token = find_longest_jwt(buffer.data(), bytesRead);
 
             const bool has_jwt = !vanguard::game_token.empty();
@@ -393,9 +398,12 @@ void handle_connection(HANDLE connection)
                 );
             }
             break;
+        }
         default:
+        {
             response = create_heartbeat_response(buffer.data(), bytesRead);
             break;
+        }
         }
     }
 }
