@@ -61,16 +61,19 @@ int wmain()
 
 	if (PipeExists())
 	{
-		std::wcout << L"Pipe exists!\n";
+		console::critical(Encrypt("Vanguard pipe exists but shows signs of unexpected reinitialization."));
 	}
 
-	system("sc stop vgc >nul 2>&1");
+	console::debug(Encrypt("Attempting to restart Vanguard module to ensure proper initialization..."));
+
+	system(Encrypt("sc stop vgc >nul 2>&1"));
 	Sleep(500);
-	system("sc start vgc >nul 2>&1");
+	system(Encrypt("sc start vgc >nul 2>&1"));
 	Sleep(500);
 
 	HANDLE pipe = CreateFileW(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-	if (pipe != INVALID_HANDLE_VALUE) {
+	if (pipe != INVALID_HANDLE_VALUE) 
+	{
 		CloseHandle(pipe);
 	}
 
