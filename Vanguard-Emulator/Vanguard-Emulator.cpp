@@ -64,8 +64,6 @@ int wmain()
 		console::critical(Encrypt("Vanguard pipe exists but shows signs of unexpected reinitialization."));
 	}
 
-	console::debug(Encrypt("Attempting to restart Vanguard module to ensure proper initialization..."));
-
 	system(Encrypt("sc stop vgc >nul 2>&1"));
 	Sleep(500);
 	system(Encrypt("sc start vgc >nul 2>&1"));
@@ -79,8 +77,20 @@ int wmain()
 
 	std::thread(connection::create_connection).detach();
 
+	static bool found_emulation_layer = false;
+
 	while (g_Running.load())
 	{
+		if (!found_emulation_layer && vanguard::g_SessionReady.load())
+		{
+			found_emulation_layer = true;
+			console::info(Encrypt("Emulation layer is active and ready."));
+
+			console::debug("SID: " + vanguard::sid);
+			console::debug("Game Token: " + vanguard::game_token);
+			console::debug("Region: " + vanguard::region);
+		}
+
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
