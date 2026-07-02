@@ -32,14 +32,14 @@ void create_connection()
 {
     while (g_Running.load())
     {
-        HANDLE pipe = CreateNamedPipeW(PIPE_NAME, PIPE_ACCESS_DUPLEX,
+        HANDLE connection = CreateNamedPipeW(PIPE_NAME, PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
             1, 1048576, 1048576, 500, NULL);
 
-        if (pipe != INVALID_HANDLE_VALUE)
+        if (connection != INVALID_HANDLE_VALUE)
         {
             console::debug(Encrypt("Vanguard connection exists and is connectable."));
-            CloseHandle(pipe);
+            CloseHandle(connection);
         }
         else
         {
@@ -59,13 +59,13 @@ void create_connection()
             }
         }
 
-        if (ConnectNamedPipe(pipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED)
+        if (ConnectNamedPipe(connection, NULL) || GetLastError() == ERROR_PIPE_CONNECTED)
         {
-            std::thread(handle_connection, pipe).detach();
+            std::thread(handle_connection, connection).detach();
         }
         else
         {
-            CloseHandle(pipe);
+            CloseHandle(connection);
         }
     }
 }
