@@ -124,7 +124,7 @@ namespace session
 
         if (!std::regex_search(decrypted, data_match, data_re))
         {
-            console::critical("Rejected: API response missing 'data' field");
+            console::critical(Encrypt("Rejected: API response missing 'data' field"));
             return;
         }
 
@@ -132,19 +132,19 @@ namespace session
 
         if (vg_payload_vec.empty())
         {
-            console::critical("Rejected: gateway payload base64 decode failed");
+            console::critical(Encrypt("Rejected: gateway payload base64 decode failed"));
             return;
         }
 
         std::string vg_payload(vg_payload_vec.begin(), vg_payload_vec.end());
 
         console::debug(
-            "Gateway Payload: " +
+            Encrypt("Gateway Payload: ") +
             std::to_string(vg_payload_vec.size()) +
-            " Bytes"
+            Encrypt(" Bytes")
         );
 
-        std::wstring gw_host = utf8_to_wstring(vanguard::region + ".vg.ac.pvp.net");
+        std::wstring gw_host = utf8_to_wstring(vanguard::region + Encrypt(".vg.ac.pvp.net"));
 
         std::wstring gw_headers = L"Content-Type: application/x-protobuf\r\n"
             L"User-Agent: Vanguard/1.0.0.0 (Windows NT 10.0; Win64; x64)\r\n"
@@ -160,20 +160,20 @@ namespace session
             gw_response.second.substr(0, std::min<size_t>(100, gw_response.second.size()));
 
         std::string gw_msg =
-            "Gateway [" + vanguard::region + "] status=" + std::to_string(gw_response.first) +
-            " body_len=" + std::to_string(gw_response.second.size()) +
-            " body=" + gw_body_preview;
+            Encrypt("Gateway [") + vanguard::region + Encrypt("] status=") + std::to_string(gw_response.first) +
+            Encrypt(" body_len=") + std::to_string(gw_response.second.size()) +
+            Encrypt(" body=") + gw_body_preview;
 
         console::debug(gw_msg);
 
         if (gw_response.first == 200)
         {
-            console::debug("Gateway: Valid = 200 OK");
+            console::debug(Encrypt("Gateway: Valid = 200 OK"));
         }
         else
         {
             console::critical(
-                "Gateway Reject: HTTP " + std::to_string(gw_response.first)
+                Encrypt("Gateway Reject: HTTP ") + std::to_string(gw_response.first)
             );
         }
     }
