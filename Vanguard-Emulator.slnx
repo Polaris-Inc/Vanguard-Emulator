@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Vanguard-Emulator/Vanguard-Emulator.vcxproj" />
+  <Project Path="Vanguard-Emulator/Vanguard-Emulator.vcxproj" Id="7dc2953a-fd2a-48a5-b745-a289d4efb5fe" />
 </Solution>

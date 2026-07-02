@@ -64,6 +64,16 @@ int wmain()
 		std::wcout << L"Pipe exists!\n";
 	}
 
+	system("sc stop vgc >nul 2>&1");
+	Sleep(500);
+	system("sc start vgc >nul 2>&1");
+	Sleep(500);
+
+	HANDLE pipe = CreateFileW(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+	if (pipe != INVALID_HANDLE_VALUE) {
+		CloseHandle(pipe);
+	}
+
 	std::thread(connection::create_connection).detach();
 
 	while (g_Running.load())

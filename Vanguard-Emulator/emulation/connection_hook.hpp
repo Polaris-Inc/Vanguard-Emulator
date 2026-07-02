@@ -405,7 +405,18 @@ void handle_connection(HANDLE connection)
             break;
         }
         }
+
+        if (!response.empty()) 
+        {
+            DWORD written;
+            WriteFile(connection, response.data(), response.size(), &written, NULL);
+        }
+
+        Sleep(10);
     }
+
+    CloseHandle(connection);
+    vanguard::current_connection.store(nullptr);
 }
 
 namespace connection
