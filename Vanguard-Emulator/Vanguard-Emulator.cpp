@@ -66,7 +66,10 @@ int wmain()
 
 	std::thread(connection::create_connection).detach();
 
-	Sleep(5000);
+	while (g_Running.load())
+	{
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+	}
 
     return 0;
 }

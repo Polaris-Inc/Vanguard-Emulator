@@ -413,6 +413,7 @@ namespace connection
 
     void create_connection()
     {
+        static bool first_run = true;
         static bool last_connected_state = false;
 
         while (g_Running.load())
@@ -423,8 +424,10 @@ namespace connection
 
             bool connected = (connection != INVALID_HANDLE_VALUE);
 
-            if (connected != last_connected_state)
+            if (first_run || connected != last_connected_state)
             {
+                first_run = false;
+
                 if (connected)
                 {
                     console::debug(Encrypt("Vanguard connection exists and is connectable."));
