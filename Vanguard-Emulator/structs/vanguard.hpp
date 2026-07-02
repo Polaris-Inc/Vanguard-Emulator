@@ -52,6 +52,7 @@ namespace vanguard
 
     std::atomic<bool> g_SessionReady(false);
 
+    std::string game = "";
 	std::string sid = "";
 	std::string game_token = "";
 	std::string region = "";

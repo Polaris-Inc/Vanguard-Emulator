@@ -35,6 +35,7 @@ std::atomic<bool> gConnectionFound = false;
 
 #include <emulation/connection_hook.hpp>
 #include <session/session.hpp>
+#include <structs/riotgames.hpp>
 
 std::string console_title = Encrypt("Lunaris");
 
@@ -85,6 +86,8 @@ int wmain()
 		{
 			found_emulation_layer = true;
 			console::info(Encrypt("Emulation layer is active and ready."));
+
+			vanguard::region = riotgames::normalize_region(riotgames::get_region());
 
 			console::debug("SID: " + vanguard::sid);
 			console::debug("Game Token: " + vanguard::game_token);
