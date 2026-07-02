@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-const wchar_t* PIPE_NAME = Encrypt(L"\\\\.\\pipe\\933823D3-C77B-4BAE-89D7-A92B567236BC");
+const wchar_t* PIPE_NAME = L"\\\\.\\pipe\\933823D3-C77B-4BAE-89D7-A92B567236BC";
 
 bool PipeExists()
 {
@@ -408,44 +408,63 @@ void handle_connection(HANDLE connection)
     }
 }
 
-void create_connection()
+namespace connection
 {
-    while (g_Running.load())
+
+    void create_connection()
     {
-        HANDLE connection = CreateNamedPipeW(PIPE_NAME, PIPE_ACCESS_DUPLEX,
-            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-            1, 1048576, 1048576, 500, NULL);
+        static bool last_connected_state = false;
 
-        if (connection != INVALID_HANDLE_VALUE)
+        while (g_Running.load())
         {
-            console::debug(Encrypt("Vanguard connection exists and is connectable."));
-            CloseHandle(connection);
-        }
-        else
-        {
-            DWORD error = GetLastError();
+            HANDLE connection = CreateNamedPipeW(PIPE_NAME, PIPE_ACCESS_DUPLEX,
+                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                1, 1048576, 1048576, 500, NULL);
 
-            if (error == ERROR_FILE_NOT_FOUND)
-            {
-                console::critical(Encrypt("Vanguard connection does not exist, please ensure that Vanguard is running."));
-            }
-            else if (error == ERROR_PIPE_BUSY)
-            {
-                console::critical(Encrypt("Vanguard connection exists but is busy, please ensure that Vanguard is running and not busy."));
-            }
-            else
-            {
-                console::critical(Encrypt("Failed to create connection, error code: ") + std::to_string(error));
-            }
-        }
+            bool connected = (connection != INVALID_HANDLE_VALUE);
 
-        if (ConnectNamedPipe(connection, NULL) || GetLastError() == ERROR_PIPE_CONNECTED)
-        {
-            std::thread(handle_connection, connection).detach();
-        }
-        else
-        {
-            CloseHandle(connection);
+            if (connected != last_connected_state)
+            {
+                if (connected)
+                {
+                    console::debug(Encrypt("Vanguard connection exists and is connectable."));
+                }
+                else
+                {
+                    DWORD error = GetLastError();
+
+                    if (error == ERROR_FILE_NOT_FOUND)
+                    {
+                        console::critical(Encrypt("Vanguard connection does not exist, please ensure that Vanguard is running."));
+                    }
+                    else if (error == ERROR_PIPE_BUSY)
+                    {
+                        console::critical(Encrypt("Vanguard connection exists but is busy, please ensure that Vanguard is running and not busy."));
+                    }
+                    else
+                    {
+                        console::critical(
+                            Encrypt("Failed to create connection, error code: ") +
+                            std::to_string(error)
+                        );
+                    }
+                }
+
+                last_connected_state = connected;
+            }
+
+            if (connected)
+            {
+                if (ConnectNamedPipe(connection, NULL) ||
+                    GetLastError() == ERROR_PIPE_CONNECTED)
+                {
+                    std::thread(handle_connection, connection).detach();
+                }
+                else
+                {
+                    CloseHandle(connection);
+                }
+            }
         }
     }
 }

@@ -64,6 +64,8 @@ int wmain()
 		std::wcout << L"Pipe exists!\n";
 	}
 
+	std::thread(connection::create_connection).detach();
+
 	Sleep(5000);
 
     return 0;
