@@ -1,7 +1,18 @@
 #pragma once
 
+#include <regex>
+
 namespace session
 {
+    inline std::string g_session_cookie;
+
+    std::wstring make_cookie_header()
+    {
+        if (g_session_cookie.empty())
+            return L"";
+        std::wstring wc = utf8_to_wstring(g_session_cookie);
+        return L"Cookie: " + wc + L"\r\n";
+    }
     std::pair<int, std::string> perform_http_request(const std::wstring& host, int port, const std::wstring& path,
         const std::wstring& method, const std::string& body = "",
         const std::wstring& extra_headers = L"", bool use_ssl = true)
@@ -29,6 +40,24 @@ namespace session
                     if (bResults) {
                         DWORD dwSize = sizeof(status_code);
                         WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &dwSize, WINHTTP_NO_HEADER_INDEX);
+
+                        DWORD cookieSize = 0;
+                        if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_SET_COOKIE, WINHTTP_HEADER_NAME_BY_INDEX, WINHTTP_NO_OUTPUT_BUFFER, &cookieSize, WINHTTP_NO_HEADER_INDEX) &&
+                            GetLastError() == ERROR_INSUFFICIENT_BUFFER && cookieSize > 0)
+                        {
+                            std::vector<wchar_t> cookieBuf(cookieSize / sizeof(wchar_t) + 1);
+                            if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_SET_COOKIE, WINHTTP_HEADER_NAME_BY_INDEX, cookieBuf.data(), &cookieSize, WINHTTP_NO_HEADER_INDEX))
+                            {
+                                int len = WideCharToMultiByte(CP_UTF8, 0, cookieBuf.data(), -1, nullptr, 0, nullptr, nullptr);
+                                if (len > 0)
+                                {
+                                    std::string utf8_cookie(len - 1, '\0');
+                                    WideCharToMultiByte(CP_UTF8, 0, cookieBuf.data(), -1, &utf8_cookie[0], len, nullptr, nullptr);
+                                    size_t semi = utf8_cookie.find(';');
+                                    g_session_cookie = (semi != std::string::npos) ? utf8_cookie.substr(0, semi) : utf8_cookie;
+                                }
+                            }
+                        }
 
                         do {
                             dwSize = 0;
@@ -65,6 +94,95 @@ namespace session
         return json;
     }
 
+    std::string extract_data_field(const std::string& response)
+    {
+        std::regex data_re("\"data\"\\s*:\\s*\"([^\"]+)\"");
+        std::smatch m;
+        if (!std::regex_search(response, m, data_re))
+            return "";
+        return m[1].str();
+    }
+
+    std::string build_response_payload(const std::string& riot_response, const std::string& action)
+    {
+        std::string b64 = base64_encode(riot_response);
+        return "{\"action\":\"" + action + "\",\"response\":\"" + b64 + "\"}";
+    }
+
+    bool access_heartbeat(const std::string& riot_response_body, const std::string& action, std::string& out_next_payload)
+    {
+        std::wstring api_headers = L"Content-Type: application/json\r\n" + make_cookie_header();
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("127.0.0.1")));
+
+        std::string json_body = build_response_payload(riot_response_body, action);
+
+        auto res = perform_http_request(
+            api_host, 80, L"/vanguard-api/gateway.php", L"POST", json_body, api_headers, false);
+
+        std::string preview = res.second.substr(0, std::min<size_t>(120, res.second.size()));
+
+        console::debug(
+            action + Encrypt(" API status=") + std::to_string(res.first) +
+            Encrypt(" body=") + preview
+        );
+
+        if (res.first != 200)
+        {
+            console::critical(action + Encrypt(" API HTTP ") + std::to_string(res.first));
+            return false;
+        }
+
+        if (res.second.find("\"success\":true") == std::string::npos &&
+            res.second.find("\"success\": true") == std::string::npos)
+        {
+            console::critical(action + Encrypt(" API returned failure"));
+            return false;
+        }
+
+        std::string data = extract_data_field(res.second);
+        if (data.empty())
+        {
+            console::critical(action + Encrypt(" API missing data field"));
+            return false;
+        }
+
+        std::vector<uint8_t> vec = base64_decode(data);
+        if (vec.empty())
+        {
+            console::critical(action + Encrypt(" payload decode failed"));
+            return false;
+        }
+
+        out_next_payload.assign(vec.begin(), vec.end());
+        return true;
+    }
+
+    bool forward_to_riot(const std::string& payload, std::string& out_response)
+    {
+        std::wstring gw_host = utf8_to_wstring(vanguard::region + Encrypt(".vg.ac.pvp.net"));
+
+        std::wstring gw_headers = L"Content-Type: application/x-protobuf\r\n"
+            L"User-Agent: Vanguard/1.0.0.0 (Windows NT 10.0; Win64; x64)\r\n"
+            L"Accept: application/x-protobuf\r\n"
+            L"Accept-Language: en-US,en;q=0.9\r\n"
+            L"Cache-Control: no-cache\r\n"
+            L"Pragma: no-cache\r\n";
+
+        auto res = perform_http_request(
+            gw_host, 8443, L"/vanguard/v1/gateway", L"POST", payload, gw_headers);
+
+        std::string preview = res.second.substr(0, std::min<size_t>(100, res.second.size()));
+
+        console::debug(
+            Encrypt("Gateway [") + vanguard::region + Encrypt("] status=") +
+            std::to_string(res.first) + Encrypt(" body_len=") +
+            std::to_string(res.second.size()) + Encrypt(" body=") + preview
+        );
+
+        out_response = res.second;
+        return res.first == 200;
+    }
+
     void create_session_payload()
     {
         std::string API_HOST = Encrypt("127.0.0.1");
@@ -81,8 +199,8 @@ namespace session
         std::wstring api_host = utf8_to_wstring(std::string(API_HOST));
 
         std::pair<int, std::string> api_response = perform_http_request(
-            api_host, 31133, L"", L"POST", json_body, api_headers, false);
-            //api_host, 31133, L"/val5/create", L"POST", json_body, api_headers, false);
+            api_host, 80, L"/vanguard-api/gateway.php", L"POST", json_body, api_headers, false);
+            //api_host, 31133, L"", L"POST", json_body, api_headers, false);
 
         std::string api_body_preview =
             api_response.second.substr(0, std::min<size_t>(120, api_response.second.size()));
