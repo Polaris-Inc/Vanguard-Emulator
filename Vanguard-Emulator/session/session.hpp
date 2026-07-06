@@ -183,6 +183,135 @@ namespace session
         return res.first == 200;
     }
 
+    bool refresh_session(const std::string& session_id, const std::string& jwt_token, const std::string& puuid)
+    {
+        std::wstring api_headers = L"Content-Type: application/json\r\n";
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("127.0.0.1")));
+
+        std::string refresh_body = "{"
+            "\"action\":\"refresh\","
+            "\"session_id\":\"" + session_id + "\","
+            "\"token\":\"" + jwt_token + "\","
+            "\"sid\":\"" + puuid + "\","
+            "\"game\":\"" + vanguard::game + "\","
+            "\"region\":\"" + vanguard::region + "\""
+            "}";
+
+        auto res = perform_http_request(api_host, 80, L"/vanguard-api/gateway.php", L"POST", refresh_body, api_headers, false);
+
+        if (res.first != 200)
+        {
+            console::critical(Encrypt("Refresh API HTTP ") + std::to_string(res.first));
+            return false;
+        }
+
+        std::regex session_re("\"session_id\"\\s*:\\s*\"([^\"]+)\"");
+        std::smatch session_match;
+        if (!std::regex_search(res.second, session_match, session_re))
+        {
+            console::critical(Encrypt("Refresh response missing session_id"));
+            return false;
+        }
+        std::string new_session_id = session_match[1].str();
+
+        console::debug(Encrypt("Refresh OK, session_id=") + new_session_id);
+
+        std::string ticket;
+        while (true)
+        {
+            std::string poll_body = "{\"action\":\"poll\",\"session_id\":\"" + new_session_id + "\"}";
+
+            auto poll_res = perform_http_request(api_host, 80, L"/vanguard-api/gateway.php", L"POST", poll_body, api_headers, false);
+
+            if (poll_res.first != 200)
+            {
+                console::critical(Encrypt("Poll API HTTP ") + std::to_string(poll_res.first));
+                return false;
+            }
+
+            if (poll_res.second.find("\"status\":\"ready\"") != std::string::npos ||
+                poll_res.second.find("\"status\": \"ready\"") != std::string::npos)
+            {
+                std::regex ticket_re("\"ticket\"\\s*:\\s*\"([^\"]+)\"");
+                std::smatch ticket_match;
+                if (!std::regex_search(poll_res.second, ticket_match, ticket_re))
+                {
+                    console::critical(Encrypt("Poll response missing ticket"));
+                    return false;
+                }
+                ticket = ticket_match[1].str();
+                break;
+            }
+
+            if (poll_res.second.find("\"status\":\"failed\"") != std::string::npos ||
+                poll_res.second.find("\"status\": \"failed\"") != std::string::npos)
+            {
+                std::regex err_re("\"error\"\\s*:\\s*\"([^\"]+)\"");
+                std::smatch err_match;
+                std::string error_msg = Encrypt("unknown");
+                if (std::regex_search(poll_res.second, err_match, err_re))
+                    error_msg = err_match[1].str();
+                console::critical(Encrypt("Poll failed: ") + error_msg);
+                return false;
+            }
+
+            Sleep(3000);
+        }
+
+        std::vector<uint8_t> ticket_bytes = base64_decode(ticket);
+        if (ticket_bytes.empty())
+        {
+            console::critical(Encrypt("Ticket base64 decode failed"));
+            return false;
+        }
+
+        HANDLE pipe = CreateFileW(PIPE_NAME, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            console::critical(Encrypt("Failed to open pipe for ticket injection"));
+            return false;
+        }
+
+        uint32_t magic = 0x000003E9;
+        uint32_t ticketLen = (uint32_t)ticket_bytes.size();
+        uint32_t packetLen = 36 + ticketLen;
+        uint32_t type = 1;
+        uint32_t zero = 0;
+
+        std::vector<uint8_t> packet;
+        auto append = [&](const auto& v)
+        {
+            const uint8_t* p = reinterpret_cast<const uint8_t*>(&v);
+            packet.insert(packet.end(), p, p + sizeof(v));
+        };
+
+        append(magic);
+        append(packetLen);
+        append(type);
+        append(zero);
+        append(zero);
+        append(zero);
+        append(ticketLen);
+        append(zero);
+        append(zero);
+        packet.insert(packet.end(), ticket_bytes.begin(), ticket_bytes.end());
+
+        DWORD written;
+        BOOL ok = WriteFile(pipe, packet.data(), (DWORD)packet.size(), &written, NULL);
+        if (!ok || written != packet.size())
+        {
+            console::critical(Encrypt("Failed to write ticket packet to pipe"));
+            CloseHandle(pipe);
+            return false;
+        }
+
+        FlushFileBuffers(pipe);
+        CloseHandle(pipe);
+
+        console::info(Encrypt("Ticket injected successfully"));
+        return true;
+    }
+
     void create_session_payload()
     {
         std::string API_HOST = Encrypt("127.0.0.1");
