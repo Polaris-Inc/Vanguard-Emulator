@@ -33,9 +33,11 @@ std::atomic<bool> gConnectionFound = false;
 #include <utility/console.hpp>
 #include <utility/utilities.hpp>
 
-#include <emulation/connection_hook.hpp>
+const wchar_t* PIPE_NAME = L"\\\\.\\pipe\\933823D3-C77B-4BAE-89D7-A92B567236BC";
+
 #include <session/session.hpp>
 #include <structs/riotgames.hpp>
+#include <emulation/connection_hook.hpp>
 
 std::string console_title = Encrypt("Lunaris");
 
@@ -47,7 +49,7 @@ void keyboard_listener()
 		{
 			if (vanguard::g_SessionReady)
 			{
-				session::create_session_payload();
+				console::info(Encrypt("Session active. Auto-refresh runs every 4 minutes."));
 			}
 			Sleep(1000);
 		}
@@ -106,7 +108,7 @@ int wmain()
 
 			vanguard::region = riotgames::normalize_region(riotgames::get_region());
 
-			console::debug("SID: " + vanguard::sid);
+			console::debug("Session ID: " + vanguard::sid);
 			console::debug("Game Token: " + vanguard::game_token);
 			console::debug("Region: " + vanguard::region);
 		}
@@ -116,14 +118,3 @@ int wmain()
 
     return 0;
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file

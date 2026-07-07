@@ -112,12 +112,12 @@ namespace session
     bool access_heartbeat(const std::string& riot_response_body, const std::string& action, std::string& out_next_payload)
     {
         std::wstring api_headers = L"Content-Type: application/json\r\n" + make_cookie_header();
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("127.0.0.1")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
 
         std::string json_body = build_response_payload(riot_response_body, action);
 
         auto res = perform_http_request(
-            api_host, 80, L"/vanguard-api/gateway.php", L"POST", json_body, api_headers, false);
+            api_host, 443, L"/gateway.php", L"POST", json_body, api_headers, true);
 
         std::string preview = res.second.substr(0, std::min<size_t>(120, res.second.size()));
 
@@ -186,7 +186,7 @@ namespace session
     bool refresh_session(const std::string& session_id, const std::string& jwt_token, const std::string& puuid)
     {
         std::wstring api_headers = L"Content-Type: application/json\r\n";
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("127.0.0.1")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
 
         std::string refresh_body = "{"
             "\"action\":\"refresh\","
@@ -197,7 +197,7 @@ namespace session
             "\"region\":\"" + vanguard::region + "\""
             "}";
 
-        auto res = perform_http_request(api_host, 80, L"/vanguard-api/gateway.php", L"POST", refresh_body, api_headers, false);
+        auto res = perform_http_request(api_host, 443, L"/gateway.php", L"POST", refresh_body, api_headers, true);
 
         if (res.first != 200)
         {
@@ -221,7 +221,7 @@ namespace session
         {
             std::string poll_body = "{\"action\":\"poll\",\"session_id\":\"" + new_session_id + "\"}";
 
-            auto poll_res = perform_http_request(api_host, 80, L"/vanguard-api/gateway.php", L"POST", poll_body, api_headers, false);
+            auto poll_res = perform_http_request(api_host, 443, L"/gateway.php", L"POST", poll_body, api_headers, true);
 
             if (poll_res.first != 200)
             {
@@ -312,9 +312,183 @@ namespace session
         return true;
     }
 
+    std::vector<uint8_t> refresh_get_ticket(const std::string& session_id, const std::string& jwt_token, const std::string& puuid)
+    {
+        std::wstring api_headers = L"Content-Type: application/json\r\n";
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+
+        std::string refresh_body = "{"
+            "\"action\":\"refresh\","
+            "\"session_id\":\"" + session_id + "\","
+            "\"token\":\"" + jwt_token + "\","
+            "\"sid\":\"" + puuid + "\","
+            "\"game\":\"" + vanguard::game + "\","
+            "\"region\":\"" + vanguard::region + "\""
+            "}";
+
+        auto res = perform_http_request(api_host, 443, L"/gateway.php", L"POST", refresh_body, api_headers, true);
+
+        if (res.first != 200)
+        {
+            console::critical(Encrypt("Refresh API HTTP ") + std::to_string(res.first));
+            return {};
+        }
+
+        std::regex session_re("\"session_id\"\\s*:\\s*\"([^\"]+)\"");
+        std::smatch session_match;
+        if (!std::regex_search(res.second, session_match, session_re))
+        {
+            console::critical(Encrypt("Refresh response missing session_id"));
+            return {};
+        }
+        std::string new_session_id = session_match[1].str();
+        console::debug(Encrypt("Refresh OK, session_id=") + new_session_id);
+
+        while (true)
+        {
+            std::string poll_body = "{\"action\":\"poll\",\"session_id\":\"" + new_session_id + "\"}";
+
+            auto poll_res = perform_http_request(api_host, 443, L"/gateway.php", L"POST", poll_body, api_headers, true);
+
+            if (poll_res.first != 200)
+            {
+                console::critical(Encrypt("Poll API HTTP ") + std::to_string(poll_res.first));
+                return {};
+            }
+
+            if (poll_res.second.find("\"status\":\"ready\"") != std::string::npos ||
+                poll_res.second.find("\"status\": \"ready\"") != std::string::npos)
+            {
+                std::regex ticket_re("\"ticket\"\\s*:\\s*\"([^\"]+)\"");
+                std::smatch ticket_match;
+                if (!std::regex_search(poll_res.second, ticket_match, ticket_re))
+                {
+                    console::critical(Encrypt("Poll response missing ticket"));
+                    return {};
+                }
+                std::string ticket_b64 = ticket_match[1].str();
+                std::vector<uint8_t> ticket_bytes = base64_decode(ticket_b64);
+                if (ticket_bytes.empty())
+                {
+                    console::critical(Encrypt("Ticket base64 decode failed"));
+                    return {};
+                }
+                console::info(Encrypt("Ticket received (") + std::to_string(ticket_bytes.size()) + Encrypt(" bytes)"));
+                return ticket_bytes;
+            }
+
+            if (poll_res.second.find("\"status\":\"failed\"") != std::string::npos ||
+                poll_res.second.find("\"status\": \"failed\"") != std::string::npos)
+            {
+                std::regex err_re("\"error\"\\s*:\\s*\"([^\"]+)\"");
+                std::smatch err_match;
+                std::string error_msg = Encrypt("unknown");
+                if (std::regex_search(poll_res.second, err_match, err_re))
+                    error_msg = err_match[1].str();
+                console::critical(Encrypt("Poll failed: ") + error_msg);
+                return {};
+            }
+
+            Sleep(3000);
+        }
+    }
+
+    bool authenticate_session_auto()
+    {
+        if (vanguard::sid.empty() || vanguard::game_token.empty())
+        {
+            console::critical(Encrypt("SID or Game Token is empty, cannot authenticate."));
+            return false;
+        }
+
+        std::string json_body = build_auth_payload(vanguard::game);
+
+        std::wstring api_headers = L"Content-Type: application/json\r\n";
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+
+        auto api_response = perform_http_request(
+            api_host, 443, L"/gateway.php", L"POST", json_body, api_headers, true);
+
+        if (api_response.first != 200)
+        {
+            console::critical(Encrypt("Auth API HTTP ") + std::to_string(api_response.first));
+            return false;
+        }
+
+        if (api_response.second.find("\"success\":true") == std::string::npos &&
+            api_response.second.find("\"success\": true") == std::string::npos)
+        {
+            console::critical(Encrypt("Auth API returned failure"));
+            return false;
+        }
+
+        std::string data = extract_data_field(api_response.second);
+        if (data.empty())
+        {
+            console::critical(Encrypt("Auth API missing data field"));
+            return false;
+        }
+
+        std::vector<uint8_t> vec = base64_decode(data);
+        if (vec.empty())
+        {
+            console::critical(Encrypt("Auth payload decode failed"));
+            return false;
+        }
+
+        std::string vg_payload(vec.begin(), vec.end());
+
+        std::wstring gw_host = utf8_to_wstring(vanguard::region + Encrypt(".vg.ac.pvp.net"));
+        std::wstring gw_headers = L"Content-Type: application/x-protobuf\r\n"
+            L"User-Agent: Vanguard/1.0.0.0 (Windows NT 10.0; Win64; x64)\r\n"
+            L"Accept: application/x-protobuf\r\n"
+            L"Accept-Language: en-US,en;q=0.9\r\n"
+            L"Cache-Control: no-cache\r\n"
+            L"Pragma: no-cache\r\n";
+
+        auto gw_response = perform_http_request(
+            gw_host, 8443, L"/vanguard/v1/gateway", L"POST", vg_payload, gw_headers);
+
+        console::debug(
+            Encrypt("Gateway [") + vanguard::region + Encrypt("] status=") +
+            std::to_string(gw_response.first) + Encrypt(" body_len=") +
+            std::to_string(gw_response.second.size()));
+
+        std::regex sid_re("\"session_id\"\\s*:\\s*\"([^\"]+)\"");
+        std::smatch sid_match;
+        if (std::regex_search(api_response.second, sid_match, sid_re))
+            vanguard::g_session_id = sid_match[1].str();
+
+        if (gw_response.first == 200)
+            vanguard::g_last_gateway_response = gw_response.second;
+
+        return gw_response.first == 200;
+    }
+
+    bool send_gateway_heartbeat()
+    {
+        if (vanguard::g_last_gateway_response.empty())
+        {
+            console::critical(Encrypt("No gateway response to build heartbeat from"));
+            return false;
+        }
+
+        std::string next_payload;
+        if (!access_heartbeat(vanguard::g_last_gateway_response, Encrypt("heartbeat"), next_payload))
+            return false;
+
+        std::string gw_body;
+        if (!forward_to_riot(next_payload, gw_body))
+            return false;
+
+        vanguard::g_last_gateway_response = gw_body;
+        console::info(Encrypt("Gateway heartbeat OK, session kept alive"));
+        return true;
+    }
+
     void create_session_payload()
     {
-        std::string API_HOST = Encrypt("127.0.0.1");
+        std::string API_HOST = Encrypt("vanguard-api-jsxa.onrender.com");
 
         if (vanguard::sid.empty() || vanguard::game_token.empty())
         {
@@ -328,8 +502,8 @@ namespace session
         std::wstring api_host = utf8_to_wstring(std::string(API_HOST));
 
         std::pair<int, std::string> api_response = perform_http_request(
-            api_host, 80, L"/vanguard-api/gateway.php", L"POST", json_body, api_headers, false);
-            //api_host, 31133, L"", L"POST", json_body, api_headers, false);
+            api_host, 443, L"/gateway.php", L"POST", json_body, api_headers, true);
+            //api_host, 31133, L"", L"POST", json_body, api_headers, true);
 
         std::string api_body_preview =
             api_response.second.substr(0, std::min<size_t>(120, api_response.second.size()));

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 enum class MessageType : uint32_t
 {
     Heartbeat = 1,
@@ -51,9 +53,18 @@ namespace vanguard
 	std::atomic<HANDLE> current_connection(nullptr);
 
     std::atomic<bool> g_SessionReady(false);
+    std::atomic<bool> g_GatewaySuccess{ false };
+    std::atomic<bool> g_Sent0x3E9{ false };
+    std::atomic<bool> g_authenticated_once{ false };
+    std::atomic<bool> g_auto_refresh_started{ false };
 
     std::string game = "valo";
 	std::string sid = "";
 	std::string game_token = "";
 	std::string region = "";
+	std::string extracted_token = "";
+	std::string g_last_gateway_response = "";
+    std::string g_session_id = "";
+    std::vector<uint8_t> g_pending_ticket;
+    std::mutex g_ticket_mtx;
 }
