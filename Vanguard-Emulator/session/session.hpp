@@ -1,6 +1,9 @@
 #pragma once
 
 #include <regex>
+#include <winternl.h>
+
+#pragma comment(lib, "advapi32.lib")
 
 namespace session
 {
@@ -82,9 +85,45 @@ namespace session
         return { status_code, response_data };
     }
 
+    std::string get_windows_version()
+    {
+        HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        if (!ntdll) return "";
+
+        auto RtlGetVersion = (LONG(WINAPI*)(PRTL_OSVERSIONINFOW))
+            GetProcAddress(ntdll, "RtlGetVersion");
+        if (!RtlGetVersion) return "";
+
+        RTL_OSVERSIONINFOW vi = { sizeof(vi) };
+        if (RtlGetVersion(&vi) < 0) return "";
+
+        DWORD ubr = 0;
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                0, KEY_READ, &hKey) == ERROR_SUCCESS)
+        {
+            DWORD type, size = sizeof(ubr);
+            RegQueryValueExW(hKey, L"UBR", NULL, &type, (LPBYTE)&ubr, &size);
+            RegCloseKey(hKey);
+        }
+
+        std::string version = std::to_string(vi.dwMajorVersion) + "." +
+               std::to_string(vi.dwMinorVersion) + "." +
+               std::to_string(vi.dwBuildNumber) + "." +
+               std::to_string(ubr);
+
+        console::debug(Encrypt("Windows version: ") + version);
+        return version;
+    }
+
     std::string build_auth_payload(const std::string& game)
     {
+        std::string version = get_windows_version();
         std::string json = "{\"action\":\"auth\",\"game\":\"" + game + "\",\"gametoken\":\"" + vanguard::game_token + "\"";
+
+        if (!version.empty())
+            json += ",\"version\":\"" + version + "\"";
 
         if (game == "valo")
             json += ",\"sid\":\"" + vanguard::sid + "\"";

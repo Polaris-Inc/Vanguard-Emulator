@@ -145,6 +145,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="emulation\connection_hook.hpp" />
+    <ClInclude Include="emulation\vgc_investigator.hpp" />
     <ClInclude Include="security\encryption.hpp" />
     <ClInclude Include="session\session.hpp" />
     <ClInclude Include="structs\riotgames.hpp" />

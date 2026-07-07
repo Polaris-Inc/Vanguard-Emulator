@@ -67,4 +67,6 @@ namespace vanguard
     std::string g_session_id = "";
     std::vector<uint8_t> g_pending_ticket;
     std::mutex g_ticket_mtx;
+
+    bool debug_vgc = false;
 }

@@ -41,5 +41,8 @@
     <ClInclude Include="structs\riotgames.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="emulation\vgc_investigator.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
