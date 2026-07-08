@@ -440,20 +440,6 @@ void handle_connection(HANDLE connection)
                     else
                         console::critical(Encrypt("Gateway authentication failed after 3 attempts"));
 
-                    console::info(Encrypt("Refreshing session ticket..."));
-                    std::string sid = vanguard::g_session_id.empty() ? vanguard::sid : vanguard::g_session_id;
-                    std::vector<uint8_t> ticket = session::refresh_get_ticket(sid, vanguard::extracted_token, vanguard::sid);
-                    if (!ticket.empty())
-                    {
-                        {
-                            std::lock_guard<std::mutex> lock(vanguard::g_ticket_mtx);
-                            vanguard::g_pending_ticket = std::move(ticket);
-                        }
-                        console::info(Encrypt("Refresh: ticket stored, will inject on next heartbeat"));
-                    }
-                    else
-                        console::critical(Encrypt("Refresh: failed to get ticket"));
-
                     console::info(Encrypt("Initializing gateway client (A/B)..."));
                     GatewayClient::init_session();
                     bool gw_ok = GatewayClient::do_gateway_full_auth(

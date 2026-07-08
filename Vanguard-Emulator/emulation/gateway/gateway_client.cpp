@@ -6,6 +6,7 @@
 #include "vgc_state.hpp"
 #include <string>
 #include <vector>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -217,6 +218,7 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
     std::string hdrs = make_headers();
     long status = 0;
     auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_payload, hdrs, &status);
+    printf("[gateway] Handshake HTTP status=%ld body_len=%zu\n", status, response.size());
     if (status != 200 || response.empty()) return false;
 
     auto ck = RgCrypto::parse_handshake_response(response, g_session.private_key_blob);
@@ -232,7 +234,11 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
 }
 
 bool do_access_request() {
-    if (!g_session.authenticated) return false;
+    if (!g_session.authenticated)
+    {
+        printf("[gateway] Access request skipped: not authenticated\n");
+        return false;
+    }
 
     VgAccessRequest access_req;
     access_req.auth_token = g_session.access_token;
@@ -242,16 +248,30 @@ bool do_access_request() {
     access_env.type = VG_ACCESS_REQ;
     access_env.payload = access_payload;
     auto encrypted = aes_encrypt_envelope(access_env);
-    if (encrypted.empty()) return false;
+    if (encrypted.empty())
+    {
+        printf("[gateway] Access request encrypt failed\n");
+        return false;
+    }
 
     auto response = send_envelope(VG_ACCESS_REQ, encrypted);
+    printf("[gateway] Access response size=%zu\n", response.size());
     if (response.empty()) return false;
 
     auto plain = aes_decrypt_response(response);
-    if (plain.empty()) return false;
+    if (plain.empty())
+    {
+        printf("[gateway] Access response decrypt failed\n");
+        return false;
+    }
+    printf("[gateway] Access response decrypted, size=%zu\n", plain.size());
 
     auto inner = ProtoBuilder::decode_envelope(plain);
-    if (inner.type != VG_TOKEN_RESP) return false;
+    if (inner.type != VG_TOKEN_RESP)
+    {
+        printf("[gateway] Access response unexpected type=%u\n", inner.type);
+        return false;
+    }
 
     auto token_resp = ProtoBuilder::decode_token_response(inner.payload);
     if (!token_resp.token.empty()) {
@@ -260,7 +280,9 @@ bool do_access_request() {
     }
 
     g_session.aes.rotate_iv();
-    return !g_session.access_token.empty();
+    bool has_token = !g_session.access_token.empty();
+    printf("[gateway] Access request %s\n", has_token ? "OK" : "failed (no token)");
+    return has_token;
 }
 
 bool do_heartbeat() {
@@ -318,8 +340,21 @@ bool do_gateway_full_auth(const std::string& jwt, const std::string& puuid, cons
         if (attempt > 0) std::this_thread::sleep_for(std::chrono::seconds(3));
 
         init_session();
-        if (!do_auth_handshake(jwt, puuid, session_state)) continue;
-        if (!do_access_request()) continue;
+        printf("[gateway] Auth attempt %d/3...\n", attempt + 1);
+
+        if (!do_auth_handshake(jwt, puuid, session_state))
+        {
+            printf("[gateway] Auth handshake failed on attempt %d\n", attempt + 1);
+            continue;
+        }
+        printf("[gateway] Auth handshake OK\n");
+
+        if (!do_access_request())
+        {
+            printf("[gateway] Access request failed on attempt %d\n", attempt + 1);
+            continue;
+        }
+        printf("[gateway] Access request OK\n");
 
         g_session.auth_count_since_region_switch++;
         if (g_session.auth_count_since_region_switch >= 4) {
@@ -329,6 +364,7 @@ bool do_gateway_full_auth(const std::string& jwt, const std::string& puuid, cons
         return true;
     }
     g_active = false;
+    printf("[gateway] Full auth failed after 3 attempts\n");
     return false;
 }
 
