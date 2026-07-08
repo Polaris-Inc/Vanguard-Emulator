@@ -429,15 +429,12 @@ void handle_connection(HANDLE connection)
                         vanguard::g_authenticated_once.store(true);
                         vanguard::g_session_start_time = std::chrono::steady_clock::now();
                         vanguard::g_auth_counter++;
-                        if (vanguard::g_auth_counter >= 4)
+                        if (vanguard::g_auth_counter >= amount_before_change)
                         {
                             vanguard::g_auth_counter = 0;
                             std::string old_region = vanguard::region;
-                            if (old_region == "ap") vanguard::region = "eu";
-                            else if (old_region == "eu") vanguard::region = "ap";
-                            else if (old_region == "na") vanguard::region = "la";
-                            else if (old_region == "la") vanguard::region = "na";
-                            console::info(Encrypt("Region rotated: ") + old_region + Encrypt(" -> ") + vanguard::region);
+                            vanguard::region = riotgames::reformalize_region(old_region);
+                            console::debug(Encrypt("Region rotated: ") + old_region + Encrypt(" -> ") + vanguard::region);
                         }
                     }
                     else
