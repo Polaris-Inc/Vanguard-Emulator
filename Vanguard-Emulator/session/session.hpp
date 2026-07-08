@@ -383,8 +383,10 @@ namespace session
         std::string new_session_id = session_match[1].str();
         console::debug(Encrypt("Refresh OK, session_id=") + new_session_id);
 
-        while (true)
+        int poll_attempts = 0;
+        while (poll_attempts < 10)
         {
+            poll_attempts++;
             std::string poll_body = "{\"action\":\"poll\",\"session_id\":\"" + new_session_id + "\"}";
 
             auto poll_res = perform_http_request(api_host, 443, L"/gateway.php", L"POST", poll_body, api_headers, true);
@@ -430,6 +432,9 @@ namespace session
 
             Sleep(3000);
         }
+
+        console::critical(Encrypt("Poll timeout after ") + std::to_string(poll_attempts) + Encrypt(" attempts"));
+        return {};
     }
 
     bool authenticate_session_auto()

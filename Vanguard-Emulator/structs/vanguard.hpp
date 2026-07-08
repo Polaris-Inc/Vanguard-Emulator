@@ -1,6 +1,8 @@
 #pragma once
 
 #include <mutex>
+#include <atomic>
+#include <chrono>
 
 enum class MessageType : uint32_t
 {
@@ -54,9 +56,9 @@ namespace vanguard
 
     std::atomic<bool> g_SessionReady(false);
     std::atomic<bool> g_GatewaySuccess{ false };
-    std::atomic<bool> g_Sent0x3E9{ false };
+    std::atomic<int> g_Sent0x3E9{ 0 };
     std::atomic<bool> g_authenticated_once{ false };
-    std::atomic<bool> g_auto_refresh_started{ false };
+
 
     std::string game = "valo";
 	std::string sid = "";
@@ -67,6 +69,11 @@ namespace vanguard
     std::string g_session_id = "";
     std::vector<uint8_t> g_pending_ticket;
     std::mutex g_ticket_mtx;
+    int g_auth_counter = 0;
 
     bool debug_vgc = false;
+
+    std::chrono::steady_clock::time_point g_session_start_time;
+    std::atomic<bool> g_gateway_hb_active{ false };
+    std::atomic<int> g_session_active_seconds{ 0 };
 }

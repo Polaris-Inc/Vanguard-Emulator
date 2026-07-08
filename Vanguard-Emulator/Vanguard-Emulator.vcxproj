@@ -77,6 +77,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -95,6 +96,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -104,13 +106,14 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -129,7 +132,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
@@ -140,12 +143,35 @@
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <LanguageStandard>stdcpp23</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Vanguard-Emulator.cpp" />
+    <ClCompile Include="emulation\gateway\proto_builder.cpp" />
+    <ClCompile Include="emulation\gateway\aes_gcm_session.cpp" />
+    <ClCompile Include="emulation\gateway\rsa_session.cpp" />
+    <ClCompile Include="emulation\gateway\ri_crypto.cpp" />
+    <ClCompile Include="emulation\gateway\rg_crypto.cpp" />
+    <ClCompile Include="emulation\gateway\gateway_client.cpp" />
+    <ClCompile Include="emulation\gateway\module_runner.cpp" />
+    <ClCompile Include="emulation\gateway\vgc_state.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="emulation\connection_hook.hpp" />
     <ClInclude Include="emulation\vgc_investigator.hpp" />
+    <ClInclude Include="emulation\gateway\proto_builder.hpp" />
+    <ClInclude Include="emulation\gateway\aes_gcm_session.hpp" />
+    <ClInclude Include="emulation\gateway\rsa_session.hpp" />
+    <ClInclude Include="emulation\gateway\ri_crypto.hpp" />
+    <ClInclude Include="emulation\gateway\rg_crypto.hpp" />
+    <ClInclude Include="emulation\gateway\gateway_client.hpp" />
+    <ClInclude Include="emulation\gateway\gateway_config.hpp" />
+    <ClInclude Include="emulation\gateway\module_runner.hpp" />
+    <ClInclude Include="emulation\gateway\vgc_state.hpp" />
     <ClInclude Include="security\encryption.hpp" />
     <ClInclude Include="session\session.hpp" />
     <ClInclude Include="structs\riotgames.hpp" />

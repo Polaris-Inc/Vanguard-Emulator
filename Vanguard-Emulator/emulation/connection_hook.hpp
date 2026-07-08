@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string_view>
+#include "emulation/gateway/gateway_client.hpp"
+#include "emulation/gateway/module_runner.hpp"
 
 bool PipeExists()
 {
@@ -336,197 +338,164 @@ void handle_connection(HANDLE connection)
     std::vector<unsigned char> buffer(16384);
     unsigned long bytesRead;
 
-    bool first_message = true;
+    unsigned char uuid_bin[16] = { 0 };
+    char uuid_str[37] = { 0 };
     bool gateway_auth_started = false;
-    std::vector<unsigned char> last_magic_4_response;
 
     while (g_Running.load())
     {
         if (!ReadFile(connection, buffer.data(), buffer.size(), &bytesRead, NULL) || bytesRead == 0)
             break;
 
-        VanguardHeader* hdr = reinterpret_cast<VanguardHeader*>(buffer.data());
+        VanguardHeader* vanguard_header = reinterpret_cast<VanguardHeader*>(buffer.data());
         std::vector<unsigned char> response;
 
-        std::string jwt = find_longest_jwt(buffer.data(), bytesRead);
-        bool has_jwt = !jwt.empty();
-
-        if (first_message)
+        switch (vanguard_header->vMessageType)
         {
-            response.assign(buffer.data(), buffer.data() + bytesRead);
-            first_message = false;
-            console::debug(Encrypt("Access Request echoed back (") + std::to_string(bytesRead) + Encrypt(" bytes)"));
-        }
-        else if (has_jwt)
+        case MessageType::Heartbeat:
         {
-            vanguard::game_token = jwt;
+            response = create_heartbeat_response(buffer.data(), bytesRead);
 
-            unsigned char tuuid_bin[16] = { 0 };
-            char tuuid_str[37] = { 0 };
-            if (find_last_uuid(buffer.data(), bytesRead, tuuid_bin, tuuid_str))
+            if (GatewayClient::has_task_module())
             {
-                vanguard::sid = tuuid_str;
+                auto modules = GatewayClient::get_pending_tasks();
+                for (auto& mod : modules)
+                {
+                    if (!mod.valid) continue;
+                    console::debug("Gateway task: " + mod.id);
+                    std::vector<uint8_t> result;
+                    if (ModuleRunner::run_task(mod.id, mod.cdn_url, vanguard::region, result))
+                    {
+                        console::debug("Module executed: " + mod.id + " (" + std::to_string(result.size()) + " bytes)");
+                        GatewayClient::submit_task_result(0, result);
+                    }
+                    else
+                        console::debug("Module execution failed: " + mod.id + " (expected for test)");
+                }
+            }
+            break;
+        }
+        case MessageType::ServerAck:
+        {
+            response = create_server_ack(vanguard_header->vMagic);
+            break;
+        }
+        case MessageType::AuthRequest:
+        {
+            vanguard::game_token = find_longest_jwt(buffer.data(), bytesRead);
+            bool has_jwt = !vanguard::game_token.empty();
+            bool uuid_found = find_last_uuid(buffer.data(), bytesRead, uuid_bin, uuid_str);
+
+            if (uuid_found)
+            {
+                vanguard::sid = uuid_str;
+                vanguard::g_SessionReady.store(has_jwt);
+                response = create_auth_packet(vanguard_header->vMagic, AuthVersion::V5, uuid_bin);
+            }
+            else
+            {
+                vanguard::g_SessionReady.store(false);
+                response = create_auth_packet(vanguard_header->vMagic, AuthVersion::V1, uuid_bin);
             }
 
-            vanguard::extracted_token = jwt;
-            vanguard::g_SessionReady.store(true);
-
-            response.assign(buffer.data(), buffer.data() + bytesRead);
-
-            console::debug(Encrypt("Token Request echoed back"));
+            vanguard::extracted_token = vanguard::game_token;
+            console::debug(Encrypt("Token Request handled"));
 
             if (!gateway_auth_started)
             {
                 gateway_auth_started = true;
-
                 vanguard::region = riotgames::normalize_region(riotgames::get_region());
                 console::debug("SID: " + vanguard::sid);
                 console::debug("Game Token: " + vanguard::game_token.substr(0, 20) + "...");
                 console::debug("Region: " + vanguard::region);
 
-                if (!vanguard::g_authenticated_once.load())
+                std::thread([]
                 {
-                    std::thread([]()
+                    console::info(Encrypt("Authenticating session (immediate)..."));
+                    bool ok = false;
+                    for (int i = 0; i < 3 && !ok; i++)
                     {
-                        bool ok = false;
-                        for (int i = 0; i < 3 && !ok; i++)
+                        if (i > 0)
                         {
-                            if (i > 0)
-                            {
-                                console::info(Encrypt("Retrying gateway auth (attempt ") + std::to_string(i + 1) + Encrypt("/3)..."));
-                                Sleep(3000);
-                            }
-                            ok = session::authenticate_session_auto();
+                            console::info(Encrypt("Retrying gateway auth (attempt ") + std::to_string(i + 1) + Encrypt("/3)..."));
+                            Sleep(3000);
                         }
-                        vanguard::g_GatewaySuccess.store(ok);
-                        vanguard::g_authenticated_once.store(ok);
-                        if (ok)
-                            console::info(Encrypt("Gateway authentication succeeded (200 OK)"));
-                        else
-                            console::critical(Encrypt("Gateway authentication failed after 3 attempts"));
-                    }).detach();
-                }
-                else
-                {
-                    console::info(Encrypt("Already authenticated in a previous session, skipping re-auth"));
-                }
-
-                if (!vanguard::g_auto_refresh_started.exchange(true))
-                {
-                    std::thread([]()
+                        ok = session::authenticate_session_auto();
+                    }
+                    vanguard::g_GatewaySuccess.store(ok);
+                    if (ok)
                     {
-                        while (g_Running.load())
+                        console::info(Encrypt("Gateway authentication succeeded (200 OK)"));
+                        vanguard::g_authenticated_once.store(true);
+                        vanguard::g_session_start_time = std::chrono::steady_clock::now();
+                        vanguard::g_auth_counter++;
+                        if (vanguard::g_auth_counter >= 4)
                         {
-                            std::this_thread::sleep_for(std::chrono::minutes(5));
-
-                            if (!g_Running.load()) break;
-                            if (!vanguard::g_SessionReady.load())
-                            {
-                                console::debug(Encrypt("Game not connected, skipping refresh cycle"));
-                                continue;
-                            }
-
-                            console::info(Encrypt("Auto-refreshing session ticket..."));
-
-                            std::string sid = vanguard::g_session_id.empty() ? vanguard::sid : vanguard::g_session_id;
-
-                            std::vector<uint8_t> ticket = session::refresh_get_ticket(
-                                sid,
-                                vanguard::extracted_token,
-                                vanguard::sid
-                            );
-
-                            if (!ticket.empty())
-                            {
-                                {
-                                    std::lock_guard<std::mutex> lock(vanguard::g_ticket_mtx);
-                                    vanguard::g_pending_ticket = std::move(ticket);
-                                }
-                                console::info(Encrypt("Auto-refresh: ticket stored, will inject on next heartbeat"));
-                            }
-                            else
-                            {
-                                console::critical(Encrypt("Auto-refresh: failed to get ticket"));
-                            }
+                            vanguard::g_auth_counter = 0;
+                            std::string old_region = vanguard::region;
+                            if (old_region == "ap") vanguard::region = "eu";
+                            else if (old_region == "eu") vanguard::region = "ap";
+                            else if (old_region == "na") vanguard::region = "la";
+                            else if (old_region == "la") vanguard::region = "na";
+                            console::info(Encrypt("Region rotated: ") + old_region + Encrypt(" -> ") + vanguard::region);
                         }
-                    }).detach();
-                }
+                    }
+                    else
+                        console::critical(Encrypt("Gateway authentication failed after 3 attempts"));
+
+                    console::info(Encrypt("Refreshing session ticket..."));
+                    std::string sid = vanguard::g_session_id.empty() ? vanguard::sid : vanguard::g_session_id;
+                    std::vector<uint8_t> ticket = session::refresh_get_ticket(sid, vanguard::extracted_token, vanguard::sid);
+                    if (!ticket.empty())
+                    {
+                        {
+                            std::lock_guard<std::mutex> lock(vanguard::g_ticket_mtx);
+                            vanguard::g_pending_ticket = std::move(ticket);
+                        }
+                        console::info(Encrypt("Refresh: ticket stored, will inject on next heartbeat"));
+                    }
+                    else
+                        console::critical(Encrypt("Refresh: failed to get ticket"));
+
+                    console::info(Encrypt("Initializing gateway client (A/B)..."));
+                    GatewayClient::init_session();
+                    bool gw_ok = GatewayClient::do_gateway_full_auth(
+                        vanguard::extracted_token,
+                        vanguard::sid,
+                        vanguard::region
+                    );
+                    if (gw_ok)
+                    {
+                        console::info(Encrypt("Gateway client initialized"));
+                        vanguard::g_gateway_hb_active.store(true);
+                        std::thread([]()
+                        {
+                            while (g_Running.load() && vanguard::g_gateway_hb_active.load() && GatewayClient::is_gateway_active())
+                            {
+                                GatewayClient::do_heartbeat();
+                                std::this_thread::sleep_for(std::chrono::seconds(300));
+                            }
+                        }).detach();
+                    }
+                    else
+                        console::critical(Encrypt("Gateway client init failed"));
+                }).detach();
+
+
             }
+            break;
         }
-        else if (hdr->vMagic == 3)
+        default:
         {
-            bool ticket_injected = false;
-
-            {
-                std::lock_guard<std::mutex> lock(vanguard::g_ticket_mtx);
-                if (!vanguard::g_pending_ticket.empty())
-                {
-                    uint32_t ticketLen = (uint32_t)vanguard::g_pending_ticket.size();
-                    uint32_t packetLen = 36 + ticketLen;
-
-                    PacketBuilder pb;
-                    pb.write<uint32_t>(0x000003E9);
-                    pb.write<uint32_t>(packetLen);
-                    pb.write<uint32_t>(1);
-                    pb.write<uint32_t>(0);
-                    pb.write<uint32_t>(0);
-                    pb.write<uint32_t>(0);
-                    pb.write<uint32_t>(ticketLen);
-                    pb.write<uint32_t>(0);
-                    pb.write<uint32_t>(0);
-                    pb.write_bytes(vanguard::g_pending_ticket.data(), ticketLen);
-
-                    response = std::move(pb.data);
-                    vanguard::g_pending_ticket.clear();
-                    last_magic_4_response = response;
-                    ticket_injected = true;
-                    console::info(Encrypt("Injected refresh ticket (") + std::to_string(ticketLen) + Encrypt(" bytes)"));
-                }
-            }
-
-            if (!ticket_injected)
-            {
-                if (vanguard::g_GatewaySuccess.load() && !vanguard::g_Sent0x3E9.load())
-                {
-                    const uint8_t magic_0x3E9_packet[] = {
-                        0xE9, 0x03, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00,
-                        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x00
-                    };
-                    response.assign(magic_0x3E9_packet, magic_0x3E9_packet + sizeof(magic_0x3E9_packet));
-                    vanguard::g_Sent0x3E9.store(true);
-                    last_magic_4_response = response;
-                    console::debug(Encrypt("Sent one-time 0x3E9 packet (gateway OK)"));
-                }
-                else
-                {
-                    response.assign(buffer.data(), buffer.data() + bytesRead);
-                    if (response.size() >= sizeof(uint32_t))
-                        *reinterpret_cast<uint32_t*>(response.data()) = 4;
-                    last_magic_4_response = response;
-                    console::debug(Encrypt("Sent heartbeat pong"));
-                }
-            }
+            response = create_heartbeat_response(buffer.data(), bytesRead);
+            break;
         }
-        else
-        {
-            if (!last_magic_4_response.empty())
-            {
-                response = last_magic_4_response;
-                console::debug(Encrypt("Match start / other message - sent last pong"));
-            }
-            else
-            {
-                response.assign(buffer.data(), buffer.data() + bytesRead);
-            }
         }
 
         if (!response.empty()) 
         {
             DWORD written;
-            WriteFile(connection, response.data(), response.size(), &written, NULL);
+            WriteFile(connection, response.data(), (DWORD)response.size(), &written, NULL);
         }
 
         Sleep(10);
@@ -534,6 +503,10 @@ void handle_connection(HANDLE connection)
 
     CloseHandle(connection);
     vanguard::current_connection.store(nullptr);
+
+    console::info(Encrypt("Sending gateway disconnect..."));
+    GatewayClient::send_disconnect();
+    GatewayClient::shutdown_session();
 
     console::info(Encrypt("Game disconnected, restarting VGC and waiting for reconnect..."));
 

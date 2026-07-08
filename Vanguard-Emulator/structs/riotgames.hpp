@@ -7,6 +7,7 @@
 #include <winhttp.h>
 #include <unordered_map>
 #include <cstdlib>
+#include <regex>
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -127,9 +128,8 @@ namespace riotgames
     std::string get_region()
     {
         char localAppData[MAX_PATH] = { 0 };
-
         if (!GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH))
-            return "[ERROR] Failed to read LOCALAPPDATA environment variable";
+            return "eu";
 
         std::string lockfilePath =
             std::string(localAppData) +
@@ -137,7 +137,7 @@ namespace riotgames
 
         DWORD attr = GetFileAttributesA(lockfilePath.c_str());
         if (attr == INVALID_FILE_ATTRIBUTES)
-            return "[ERROR] Lockfile not found (Riot Client not running or not logged in)";
+            return "eu";
 
         HANDLE hFile = CreateFileA(
             lockfilePath.c_str(),
@@ -150,73 +150,84 @@ namespace riotgames
         );
 
         if (hFile == INVALID_HANDLE_VALUE)
-        {
-            DWORD err = GetLastError();
-
-            if (err == ERROR_SHARING_VIOLATION)
-                return "[ERROR] Lockfile is currently locked by Riot Client (normal state)";
-
-            return "[ERROR] Failed to open lockfile, error: " + std::to_string(err);
-        }
+            return "eu";
 
         char buf[256] = { 0 };
         DWORD read = 0;
-
         ReadFile(hFile, buf, sizeof(buf), &read, NULL);
         CloseHandle(hFile);
 
         std::string lock(buf);
-
         std::vector<std::string> parts;
         std::stringstream ss(lock);
         std::string item;
-
         while (std::getline(ss, item, ':'))
             parts.push_back(item);
 
         if (parts.size() < 4)
-            return Encrypt("[ERROR] Invalid lockfile format");
+            return "eu";
 
         int port = 0;
-
-        try
-        {
-            port = std::stoi(parts[2]);
-        }
-        catch (...)
-        {
-            return Encrypt("[ERROR] Invalid port in lockfile");
-        }
+        try { port = std::stoi(parts[2]); }
+        catch (...) { return "eu"; }
 
         std::string password = parts[3];
         std::string auth = "riot:" + password;
 
-        std::string b64auth = base64_encode(auth);
+        std::string encoded;
+        for (size_t i = 0; i < auth.size(); i += 3) {
+            unsigned char b1 = auth[i];
+            unsigned char b2 = (i + 1 < auth.size()) ? auth[i + 1] : 0;
+            unsigned char b3 = (i + 2 < auth.size()) ? auth[i + 2] : 0;
+            unsigned char c1 = b1 >> 2;
+            unsigned char c2 = ((b1 & 0x03) << 4) | (b2 >> 4);
+            unsigned char c3 = ((b2 & 0x0F) << 2) | (b3 >> 6);
+            unsigned char c4 = b3 & 0x3F;
+            const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            encoded += t[c1];
+            encoded += t[c2];
+            if (i + 1 < auth.size()) encoded += t[c3]; else encoded += '=';
+            if (i + 2 < auth.size()) encoded += t[c4]; else encoded += '=';
+        }
 
-        std::wstring headers =
-            L"Authorization: Basic " +
-            utf8_to_wstring(b64auth) +
-            L"\r\n";
+        HINTERNET hSession = WinHttpOpen(L"RiotClient",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, nullptr, nullptr, 0);
+        if (!hSession) return "eu";
 
-        auto res = session::perform_http_request(
-            L"127.0.0.1",
-            port,
-            L"/chat/v1/session",
-            L"GET",
-            "",
-            headers
-        );
+        std::wstring whost = L"127.0.0.1";
+        HINTERNET hConnect = WinHttpConnect(hSession, whost.c_str(), (INTERNET_PORT)port, 0);
+        if (!hConnect) { WinHttpCloseHandle(hSession); return "eu"; }
 
-        if (res.first != 200)
-            return Encrypt("[ERROR] Riot API request failed, HTTP: ") + std::to_string(res.first);
+        HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET",
+            L"/chat/v1/session", nullptr, nullptr, nullptr,
+            WINHTTP_FLAG_SECURE);
+        if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return "eu"; }
+
+        DWORD flags = SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+            SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+        WinHttpSetOption(hRequest, WINHTTP_OPTION_SECURITY_FLAGS, &flags, sizeof(flags));
+
+        std::wstring wencoded(encoded.begin(), encoded.end());
+        std::wstring hdrs = L"Authorization: Basic " + wencoded;
+        WinHttpSendRequest(hRequest, hdrs.c_str(), (DWORD)hdrs.length(), nullptr, 0, 0, 0);
+        WinHttpReceiveResponse(hRequest, nullptr);
+
+        DWORD size = 0;
+        WinHttpQueryDataAvailable(hRequest, &size);
+        std::string buffer(size + 1, 0);
+        DWORD read_bytes = 0;
+        WinHttpReadData(hRequest, buffer.data(), size, &read_bytes);
+
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
 
         std::regex region_re("\"region\"\\s*:\\s*\"([^\"]+)\"");
         std::smatch match;
+        if (std::regex_search(buffer, match, region_re))
+            return match[1].str();
 
-        if (!std::regex_search(res.second, match, region_re))
-            return Encrypt("[ERROR] Region field not found in Riot response");
-
-        return match[1].str();
+        return "eu";
     }
 
     std::string normalize_region(const std::string& region)

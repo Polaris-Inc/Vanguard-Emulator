@@ -49,7 +49,7 @@ void keyboard_listener()
 		{
 			if (vanguard::g_SessionReady)
 			{
-				console::info(Encrypt("Session active. Auto-refresh runs every 4 minutes."));
+				console::info(Encrypt("Session active. Auto-refresh runs every 5 minutes."));
 			}
 			Sleep(1000);
 		}
@@ -96,6 +96,116 @@ int wmain()
 
 	std::thread(connection::create_connection).detach();
 	std::thread(keyboard_listener).detach();
+
+	// Session timer thread - fully independent, never dies
+	std::thread([]()
+	{
+		while (g_Running.load())
+		{
+			if (vanguard::g_SessionReady.load() && vanguard::g_GatewaySuccess.load())
+			{
+				auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+					std::chrono::steady_clock::now() - vanguard::g_session_start_time).count();
+				vanguard::g_session_active_seconds.store((int)elapsed);
+				console::info(Encrypt("Session Active: ") + std::to_string(elapsed) + Encrypt("s"));
+				SetConsoleTitleW((L"Lunaris - Session: " + std::to_wstring(elapsed) + L"s").c_str());
+			}
+			std::this_thread::sleep_for(std::chrono::seconds(30));
+		}
+	}).detach();
+
+	// Auto-refresh thread - separate so it can never kill the timer
+	std::thread([]()
+	{
+		while (g_Running.load())
+		{
+			std::this_thread::sleep_for(std::chrono::minutes(5));
+			if (!g_Running.load()) break;
+			if (!vanguard::g_SessionReady.load()) continue;
+
+			try
+			{
+				console::info(Encrypt("Authenticating session (refresh)..."));
+				bool ok = false;
+				for (int i = 0; i < 3 && !ok; i++)
+				{
+					if (i > 0)
+					{
+						console::info(Encrypt("Retrying gateway auth (attempt ") + std::to_string(i + 1) + Encrypt("/3)..."));
+						Sleep(3000);
+					}
+					ok = session::authenticate_session_auto();
+				}
+				vanguard::g_GatewaySuccess.store(ok);
+				if (ok)
+				{
+					console::info(Encrypt("Gateway authentication succeeded (200 OK)"));
+					vanguard::g_auth_counter++;
+					if (vanguard::g_auth_counter >= 4)
+					{
+						vanguard::g_auth_counter = 0;
+						std::string old_region = vanguard::region;
+						if (old_region == "ap") vanguard::region = "eu";
+						else if (old_region == "eu") vanguard::region = "ap";
+						else if (old_region == "na") vanguard::region = "la";
+						else if (old_region == "la") vanguard::region = "na";
+						console::info(Encrypt("Region rotated: ") + old_region + Encrypt(" -> ") + vanguard::region);
+					}
+				}
+				else
+					console::critical(Encrypt("Gateway authentication failed after 3 attempts"));
+
+				console::info(Encrypt("Refreshing session ticket..."));
+				std::string sid = vanguard::g_session_id.empty() ? vanguard::sid : vanguard::g_session_id;
+				std::vector<uint8_t> ticket = session::refresh_get_ticket(sid, vanguard::extracted_token, vanguard::sid);
+				if (!ticket.empty())
+				{
+					{
+						std::lock_guard<std::mutex> lock(vanguard::g_ticket_mtx);
+						vanguard::g_pending_ticket = std::move(ticket);
+					}
+					console::info(Encrypt("Refresh: ticket stored, will inject on next heartbeat"));
+				}
+				else
+					console::critical(Encrypt("Refresh: failed to get ticket"));
+
+				console::info(Encrypt("Re-initializing gateway client (refresh)..."));
+				vanguard::g_gateway_hb_active.store(false);
+				GatewayClient::shutdown_session();
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+				bool gw_ok = GatewayClient::do_gateway_full_auth(
+					vanguard::extracted_token,
+					vanguard::sid,
+					vanguard::region
+				);
+				if (gw_ok)
+				{
+					vanguard::g_session_start_time = std::chrono::steady_clock::now();
+					console::info(Encrypt("Gateway client refreshed"));
+					vanguard::g_gateway_hb_active.store(true);
+					std::thread([]()
+					{
+						while (g_Running.load() && vanguard::g_gateway_hb_active.load() && GatewayClient::is_gateway_active())
+						{
+							GatewayClient::do_heartbeat();
+							std::this_thread::sleep_for(std::chrono::seconds(300));
+						}
+					}).detach();
+				}
+				else
+					console::critical(Encrypt("Gateway client refresh failed"));
+			}
+			catch (const std::exception& e)
+			{
+				console::critical(Encrypt("Refresh error: ") + std::string(e.what()));
+			}
+			catch (...)
+			{
+				console::critical(Encrypt("Refresh unknown error"));
+			}
+		}
+	}).detach();
 
 	static bool found_emulation_layer = false;
 
