@@ -28,6 +28,8 @@
 std::atomic<bool> g_Running{ true };
 std::atomic<bool> gConnectionFound = false;
 
+int amount_before_change = 5;
+
 #include <structs/vanguard.hpp>
 
 #include <utility/console.hpp>

@@ -263,4 +263,22 @@ namespace riotgames
 
         return region;
     }
+
+    std::string reformalize_region(const std::string& region)
+    {
+        static const std::unordered_map<std::string, std::string> map =
+        {
+            {"na", "latam"},
+            {"latam", "na"},
+
+            {"eu", "ap"},
+            {"ap", "eu"}
+        };
+
+        auto it = map.find(region);
+        if (it != map.end())
+            return it->second;
+
+        return region;
+    }
 }
