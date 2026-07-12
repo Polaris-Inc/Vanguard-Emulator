@@ -252,9 +252,9 @@ namespace riotgames
             {"eu1", "eu"},
             {"eu2", "eu"},
 
-            {"br1", "latam"},
-            {"la1", "latam"},
-            {"la2", "latam"}
+            {"br1", "eu"},
+            {"la1", "eu"},
+            {"la2", "eu"}
         };
 
         auto it = map.find(region);

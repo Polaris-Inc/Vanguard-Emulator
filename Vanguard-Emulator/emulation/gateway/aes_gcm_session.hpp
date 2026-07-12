@@ -20,6 +20,7 @@ public:
 
     bool has_key() const { return key_set_; }
     const std::vector<uint8_t>& current_iv() const { return iv_; }
+    const std::vector<uint8_t>& current_key() const { return key_; }
 
     void rotate_iv();
     void invalidate() { key_set_ = false; }

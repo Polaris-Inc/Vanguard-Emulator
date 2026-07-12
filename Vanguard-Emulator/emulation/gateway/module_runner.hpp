@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include <functional>
 
 namespace ModuleRunner {
 

@@ -3,7 +3,10 @@
 #include "rg_crypto.hpp"
 #include "ri_crypto.hpp"
 #include "proto_builder.hpp"
+#include "task_payload_helper.hpp"
+#include "module_cache_manager.hpp"
 #include "vgc_state.hpp"
+#include "rsa_session.hpp"
 #include <string>
 #include <vector>
 #include <cstdio>
@@ -25,6 +28,7 @@ static bool g_active = false;
 static bool g_has_task = false;
 static std::vector<CdnModule> g_pending_modules;
 static std::mutex g_module_mutex;
+static ModuleCache::ModuleCacheManager g_module_cache("C:\\vanguard_modules");
 
 static const char* kGatewayPath = "/vanguard/v1/gateway";
 static const int kGatewayPort = 8443;
@@ -187,12 +191,20 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
 
     VgAuthRequest auth_req;
     auth_req.game_token = jwt;
+    auth_req.machine_id = puuid;
     auth_req.external_sid = puuid;
     auth_req.game_id = "com.riotgames.valorant";
     auth_req.client_rsa_public_key = g_session.public_key_blob;
-    auth_req.machine_id = "00000000-0000-0000-0000-000000000000";
+    auth_req.platform_type = 1;
+    auth_req.boot_state = 3;
+    auth_req.ephemeral_identifiers = std::vector<uint8_t>(10, '0');
+    auth_req.flags["platform"] = "windows";
+    auth_req.flags["version"] = "release";
+    auth_req.metadata["client_version"] = "release-13.00-shipping-30-4955671";
     auth_req.metadata["platform"] = "Windows";
     auth_req.metadata["platform_version"] = "10.0.19045";
+    auth_req.metadata["device_model"] = "i7-10700K";
+    auth_req.metadata["build"] = "19045";
 
     auto auth_payload = ProtoBuilder::encode_auth_request(auth_req);
 
@@ -201,22 +213,18 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
     auth_env.payload = auth_payload;
     auto envelope_data = ProtoBuilder::encode_envelope(auth_env);
 
-    auto raw_pub = g_session.public_key_blob;
-    RiCrypto::RgEnvelope rg_env;
-    rg_env.nonce = {0,0,0,0,0,0,0,0,0,0,0,1};
-    AesGcmSession temp_aes;
-    temp_aes.set_key({0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0});
-    temp_aes.set_iv(rg_env.nonce);
-    auto encrypted = temp_aes.encrypt(envelope_data);
-    if (encrypted.size() < 16) return false;
-    rg_env.encrypted.assign(encrypted.begin(), encrypted.end() - 16);
-    rg_env.tag.assign(encrypted.end() - 16, encrypted.end());
-
-    auto final_payload = RiCrypto::encode_envelope(rg_env, raw_pub);
+    // Build the full request payload with RSA+AES wire format
+    auto& server_key = GatewayConfig::get_server_public_key();
+    auto final_payload = RiCrypto::build_payload(envelope_data, VG_AUTH_REQ, server_key);
+    if (final_payload.empty()) {
+        printf("[gateway] Handshake payload build failed\n");
+        return false;
+    }
 
     std::string region_host = get_region_host(get_current_region());
     std::string hdrs = make_headers();
     long status = 0;
+    printf("[gateway] Handshake -> %s%s\n", region_host.c_str(), kGatewayPath);
     auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_payload, hdrs, &status);
     printf("[gateway] Handshake HTTP status=%ld body_len=%zu\n", status, response.size());
     if (status != 200 || response.empty()) return false;
@@ -230,6 +238,7 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
     g_session.aes.set_key(ck.aes_key);
     g_session.aes.set_iv(ck.iv);
     g_session.authenticated = true;
+    g_module_cache.set_session_aes_key(g_session.aes.current_key().data());
     return true;
 }
 
@@ -331,6 +340,20 @@ bool do_heartbeat() {
         }
     }
 
+    auto cdn_paths = ProtoBuilder::extract_cdn_paths(inner.payload);
+    for (const auto& p : cdn_paths) {
+        printf("[gateway] HB CDN: %s\n", p.c_str());
+        g_module_cache.fetch_module_async(p, region_host.substr(0, region_host.find('.')));
+    }
+
+    auto task_ids = ProtoBuilder::extract_task_ids(inner.payload);
+    if (!task_ids.empty()) {
+        printf("[gateway] HB contains %zu task(s)\n", task_ids.size());
+        for (const auto& tid : task_ids) {
+            printf("[gateway]   task id=%s\n", tid.c_str());
+        }
+    }
+
     if (had_tasks) g_has_task = true;
     return true;
 }
@@ -380,6 +403,7 @@ bool submit_task_result(uint32_t task_id, const std::vector<uint8_t>& result_dat
     tr.id = task_id;
     tr.data = result_data;
     tr.status = 1;
+    tr.performance = TaskPayloadHelper::encode_task_performance();
 
     VgTaskResultRequest req;
     req.access_token = g_session.access_token;
@@ -394,6 +418,7 @@ bool submit_task_result(uint32_t task_id, const std::vector<uint8_t>& result_dat
     if (encrypted.empty()) return false;
 
     auto response = send_envelope(VG_TASK_RESULT, encrypted);
+    printf("[gateway] Task result submitted id=%u ok=%d\n", task_id, !response.empty());
     return !response.empty();
 }
 

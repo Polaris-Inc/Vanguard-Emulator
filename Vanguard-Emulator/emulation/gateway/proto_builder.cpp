@@ -1,4 +1,6 @@
 #include "proto_builder.hpp"
+#include <regex>
+#include <set>
 
 static void write_varint(std::vector<uint8_t>& buf, uint64_t v) {
     do {
@@ -97,6 +99,32 @@ static uint64_t read_field_uint64(const uint8_t* d, size_t sz, size_t& pos) {
     return read_varint(d, sz, pos);
 }
 
+static std::vector<uint8_t> encode_version(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+    std::vector<uint8_t> buf;
+    if (a) write_field_varint(buf, 1, a);
+    if (b) write_field_varint(buf, 2, b);
+    if (c) write_field_varint(buf, 3, c);
+    if (d) write_field_varint(buf, 4, d);
+    return buf;
+}
+
+static std::vector<uint8_t> encode_os_info(uint32_t platform, const std::string& os_version, uint32_t build_number, uint32_t arch) {
+    std::vector<uint8_t> buf;
+    write_field_varint(buf, 1, platform);
+    write_field_str(buf, 2, os_version);
+    write_field_varint(buf, 3, build_number);
+    write_field_varint(buf, 4, arch);
+    return buf;
+}
+
+static std::vector<uint8_t> encode_cpu_info(const std::string& brand, const std::string& model) {
+    std::vector<uint8_t> buf;
+    if (!brand.empty()) write_field_str(buf, 1, brand);
+    if (!model.empty()) write_field_str(buf, 2, model);
+    write_field_varint(buf, 4, 8);
+    return buf;
+}
+
 namespace ProtoBuilder {
 
 VgEnvelope decode_envelope(const std::vector<uint8_t>& data) {
@@ -135,13 +163,32 @@ std::vector<uint8_t> encode_envelope(const VgEnvelope& env) {
 std::vector<uint8_t> encode_auth_request(const VgAuthRequest& req) {
     std::vector<uint8_t> buf;
     write_field_str(buf, 1, req.machine_id);
-    write_field_str(buf, 2, req.game_token);
-    write_field_vec(buf, 3, req.client_rsa_public_key);
-    write_field_str(buf, 4, req.game_id);
-    write_field_vec(buf, 5, req.ephemeral_identifiers);
-    write_field_str(buf, 6, req.external_sid);
-    write_map_field(buf, 7, req.flags);
-    write_map_field(buf, 8, req.metadata);
+    {
+        auto os = encode_os_info(1, "10.0.19045", 19045, 1);
+        write_field_submsg(buf, 2, os);
+    }
+    write_field_varint(buf, 3, req.platform_type);
+    write_field_str(buf, 4, req.game_token);
+    write_field_vec(buf, 5, req.client_rsa_public_key);
+    {
+        auto gv = encode_version(13, 0, 30, 0);
+        write_field_submsg(buf, 6, gv);
+    }
+    {
+        auto vv = encode_version(1, 18, 3, 77);
+        write_field_submsg(buf, 7, vv);
+    }
+    write_field_str(buf, 8, req.game_id);
+    write_field_varint(buf, 9, req.boot_state);
+    for (size_t i = 0; i < 10; i++)
+        write_field_bytes(buf, 10, (const uint8_t*)"0", 1);
+    {
+        auto cpu = encode_cpu_info("GenuineIntel", "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz");
+        write_field_submsg(buf, 11, cpu);
+    }
+    write_field_str(buf, 13, req.external_sid);
+    write_map_field(buf, 14, req.flags);
+    write_map_field(buf, 15, req.metadata);
     return buf;
 }
 
@@ -226,6 +273,7 @@ std::vector<uint8_t> encode_task_result_request(const VgTaskResultRequest& req) 
         else if (!tr.id_str.empty()) write_field_str(sub, 1, tr.id_str);
         write_field_vec(sub, 2, tr.data);
         if (tr.status) write_field_varint(sub, 3, tr.status);
+        if (!tr.performance.empty()) write_field_vec(sub, 6, tr.performance);
         write_field_submsg(buf, 2, sub);
     }
     return buf;
@@ -281,6 +329,49 @@ std::vector<uint8_t> find_heartbeat_protobuf_slice(const std::vector<uint8_t>& p
     if (auto s = try_off(0); !s.empty()) return s;
     if (plain.size() > 32) { if (auto s = try_off(32); !s.empty()) return s; }
     return {};
+}
+
+std::string sanitize_cdn_path(const std::string& raw) {
+    static const std::regex kCdnRe("/v1/cdn/mod/\\d+\\?verify=[0-9A-Za-z%\\-\\._\\+/=]+");
+    std::smatch m;
+    if (std::regex_search(raw, m, kCdnRe)) return m[0].str();
+    return "";
+}
+
+std::string module_id_from_path(const std::string& cdn_path) {
+    static const std::regex kModIdRe("/v1/cdn/mod/(\\d+)");
+    std::smatch m;
+    if (std::regex_search(cdn_path, m, kModIdRe)) return m[1].str();
+    return "unknown";
+}
+
+std::vector<std::string> extract_cdn_paths(const std::vector<uint8_t>& data) {
+    std::string text(data.begin(), data.end());
+    for (char& c : text) if ((unsigned char)c < 0x20) c = ' ';
+    static const std::regex kCdnRe("/v1/cdn/mod/\\d+\\?verify=[0-9A-Za-z%\\-\\._\\+/=]+");
+    std::sregex_iterator it(text.begin(), text.end(), kCdnRe);
+    std::vector<std::string> result;
+    std::set<std::string> seen;
+    for (std::sregex_iterator end; it != end; ++it) {
+        std::string p = (*it)[0].str();
+        if (seen.insert(p).second) result.push_back(p);
+    }
+    return result;
+}
+
+std::vector<std::string> extract_task_ids(const std::vector<uint8_t>& data) {
+    std::string text(data.begin(), data.end());
+    for (char& c : text) if ((unsigned char)c < 0x20) c = ' ';
+    static const std::regex kTaskRe("(?:6a49|6a4a)[0-9a-f]{20}", std::regex_constants::icase);
+    std::sregex_iterator it(text.begin(), text.end(), kTaskRe);
+    std::vector<std::string> result;
+    std::set<std::string> seen;
+    for (std::sregex_iterator end; it != end; ++it) {
+        std::string id = (*it)[0].str();
+        for (char& c : id) c = (char)::tolower((unsigned char)c);
+        if (seen.insert(id).second) result.push_back(id);
+    }
+    return result;
 }
 
 }

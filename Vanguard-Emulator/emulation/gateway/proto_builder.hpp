@@ -40,14 +40,20 @@ struct VgEnvelope {
 };
 
 struct VgAuthRequest {
-    std::string machine_id;
-    std::string game_token;
-    std::vector<uint8_t> client_rsa_public_key;
-    std::string game_id = "com.riotgames.valorant";
-    std::vector<uint8_t> ephemeral_identifiers;
-    std::string external_sid;
-    std::map<std::string, std::string> flags;
-    std::map<std::string, std::string> metadata;
+    std::string machine_id;                              // field 1  - bytes
+    // os_info is encoded inline, no separate struct       // field 2  - OsInfo sub-msg
+    uint32_t platform_type = 1;                          // field 3  - varint
+    std::string game_token;                              // field 4  - string
+    std::vector<uint8_t> client_rsa_public_key;          // field 5  - bytes
+    // game_version encoded inline                         // field 6  - Version sub-msg
+    // vanguard_version encoded inline                     // field 7  - Version sub-msg
+    std::string game_id = "com.riotgames.valorant";      // field 8  - string
+    uint32_t boot_state = 3;                             // field 9  - varint
+    std::vector<uint8_t> ephemeral_identifiers;          // field 10 - repeated bytes
+    // cpu_info encoded inline                             // field 11 - CpuInfo sub-msg
+    std::string external_sid;                            // field 13 - string
+    std::map<std::string, std::string> flags;            // field 14 - map entry, repeated
+    std::map<std::string, std::string> metadata;         // field 15 - map entry, repeated
 };
 
 struct VgAccessRequest {
@@ -82,6 +88,7 @@ struct VgTaskResult {
     std::vector<uint8_t> id_bytes;
     std::vector<uint8_t> data;
     uint32_t status = 1;
+    std::vector<uint8_t> performance;
 };
 
 struct VgTaskResultRequest {
@@ -132,5 +139,10 @@ std::vector<uint8_t> encode_disconnect_request(const VgDisconnectRequest& req);
 
 bool looks_like_protobuf_root(const uint8_t* d, size_t sz);
 std::vector<uint8_t> find_heartbeat_protobuf_slice(const std::vector<uint8_t>& plain);
+
+std::vector<std::string> extract_cdn_paths(const std::vector<uint8_t>& data);
+std::vector<std::string> extract_task_ids(const std::vector<uint8_t>& data);
+std::string module_id_from_path(const std::string& cdn_path);
+std::string sanitize_cdn_path(const std::string& raw);
 
 }

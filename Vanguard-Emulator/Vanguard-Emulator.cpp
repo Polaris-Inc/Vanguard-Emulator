@@ -28,7 +28,7 @@
 std::atomic<bool> g_Running{ true };
 std::atomic<bool> gConnectionFound = false;
 
-int amount_before_change = 5;
+int amount_before_change = 4;
 
 #include <structs/vanguard.hpp>
 
@@ -99,7 +99,7 @@ int wmain()
 	std::thread(connection::create_connection).detach();
 	std::thread(keyboard_listener).detach();
 
-	// Session timer thread - fully independent, never dies
+	// Session timer thread - every 1s, updates in-place with \r
 	std::thread([]()
 	{
 		while (g_Running.load())
@@ -109,30 +109,45 @@ int wmain()
 				auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
 					std::chrono::steady_clock::now() - vanguard::g_session_start_time).count();
 				vanguard::g_session_active_seconds.store((int)elapsed);
-				console::info(Encrypt("Session Active: ") + std::to_string(elapsed) + Encrypt("s"));
+				console::session_status((int)elapsed);
 				SetConsoleTitleW((L"Lunaris - Session: " + std::to_wstring(elapsed) + L"s").c_str());
 			}
-			std::this_thread::sleep_for(std::chrono::seconds(30));
+			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
 	}).detach();
 
-	// Auto-refresh thread - separate so it can never kill the timer
+	// Auto-refresh thread - fires at exact 300s/600s/900s/1200s boundaries
 	std::thread([]()
 	{
 		while (g_Running.load())
 		{
-			std::this_thread::sleep_for(std::chrono::minutes(5));
+			if (!vanguard::g_SessionReady.load())
+			{
+				std::this_thread::sleep_for(std::chrono::seconds(1));
+				continue;
+			}
+
+			// Calculate next exact 300s boundary from session start
+			auto now = std::chrono::steady_clock::now();
+			auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+				now - vanguard::g_session_start_time).count();
+			long long next_boundary = ((elapsed / 300) + 1) * 300;
+			auto target = vanguard::g_session_start_time + std::chrono::seconds(next_boundary);
+
+			std::this_thread::sleep_until(target);
 			if (!g_Running.load()) break;
 			if (!vanguard::g_SessionReady.load()) continue;
 
 			try
 			{
+				printf("\n"); // break out of \r line so log messages are clean
 				console::info(Encrypt("Authenticating session (refresh)..."));
 				bool ok = false;
 				for (int i = 0; i < 3 && !ok; i++)
 				{
 					if (i > 0)
 					{
+						printf("\n");
 						console::info(Encrypt("Retrying gateway auth (attempt ") + std::to_string(i + 1) + Encrypt("/3)..."));
 						Sleep(3000);
 					}
@@ -141,6 +156,7 @@ int wmain()
 				vanguard::g_GatewaySuccess.store(ok);
 				if (ok)
 				{
+					printf("\n");
 					console::info(Encrypt("Gateway authentication succeeded (200 OK)"));
 					vanguard::g_auth_counter++;
 					if (vanguard::g_auth_counter >= amount_before_change)
@@ -148,12 +164,17 @@ int wmain()
 						vanguard::g_auth_counter = 0;
 						std::string old_region = vanguard::region;
 						vanguard::region = riotgames::reformalize_region(old_region);
+						printf("\n");
 						console::debug(Encrypt("Region rotated: ") + old_region + Encrypt(" -> ") + vanguard::region);
 					}
 				}
 				else
+				{
+					printf("\n");
 					console::critical(Encrypt("Gateway authentication failed after 3 attempts"));
+				}
 
+				printf("\n");
 				console::info(Encrypt("Refreshing session ticket..."));
 				std::string sid = vanguard::g_session_id.empty() ? vanguard::sid : vanguard::g_session_id;
 				std::vector<uint8_t> ticket = session::refresh_get_ticket(sid, vanguard::extracted_token, vanguard::sid);
@@ -168,6 +189,7 @@ int wmain()
 				else
 					console::critical(Encrypt("Refresh: failed to get ticket"));
 
+				printf("\n");
 				console::info(Encrypt("Re-initializing gateway client (refresh)..."));
 				vanguard::g_gateway_hb_active.store(false);
 				GatewayClient::shutdown_session();
@@ -180,7 +202,7 @@ int wmain()
 				);
 				if (gw_ok)
 				{
-					vanguard::g_session_start_time = std::chrono::steady_clock::now();
+					printf("\n");
 					console::info(Encrypt("Gateway client refreshed"));
 					vanguard::g_gateway_hb_active.store(true);
 					std::thread([]()
@@ -193,14 +215,19 @@ int wmain()
 					}).detach();
 				}
 				else
+				{
+					printf("\n");
 					console::critical(Encrypt("Gateway client refresh failed"));
+				}
 			}
 			catch (const std::exception& e)
 			{
+				printf("\n");
 				console::critical(Encrypt("Refresh error: ") + std::string(e.what()));
 			}
 			catch (...)
 			{
+				printf("\n");
 				console::critical(Encrypt("Refresh unknown error"));
 			}
 		}

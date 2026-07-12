@@ -65,6 +65,12 @@ public:
         log(level::critical, message);
     }
 
+    static void session_status(int seconds) {
+        std::lock_guard<std::mutex> lock(s_mutex);
+        printf("\rSession Active: %ds  ", seconds);
+        fflush(stdout);
+    }
+
 private:
     static inline FILE* s_out = nullptr;
     static inline FILE* s_in = nullptr;

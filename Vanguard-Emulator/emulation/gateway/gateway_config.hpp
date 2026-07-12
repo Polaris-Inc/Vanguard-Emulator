@@ -1,4 +1,6 @@
 #pragma once
+#include <vector>
+#include <cstdint>
 
 namespace GatewayConfig {
 
@@ -27,5 +29,7 @@ inline constexpr bool kSendTaskResults = true;
 inline constexpr unsigned kSessionRefreshMaxAttempts = 3;
 inline constexpr unsigned kGatewayFreshSec = 300;
 inline constexpr unsigned kMinSameJwtPostSec = 280;
+
+const std::vector<uint8_t>& get_server_public_key();
 
 }

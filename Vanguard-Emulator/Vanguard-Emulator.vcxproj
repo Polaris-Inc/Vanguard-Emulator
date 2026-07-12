@@ -157,7 +157,11 @@
     <ClCompile Include="emulation\gateway\ri_crypto.cpp" />
     <ClCompile Include="emulation\gateway\rg_crypto.cpp" />
     <ClCompile Include="emulation\gateway\gateway_client.cpp" />
+    <ClCompile Include="emulation\gateway\gateway_config.cpp" />
     <ClCompile Include="emulation\gateway\module_runner.cpp" />
+    <ClCompile Include="emulation\gateway\module_cache_manager.cpp" />
+    <ClCompile Include="emulation\gateway\task_payload_helper.cpp" />
+    <ClCompile Include="emulation\gateway\riot_utils.cpp" />
     <ClCompile Include="emulation\gateway\vgc_state.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -171,7 +175,10 @@
     <ClInclude Include="emulation\gateway\gateway_client.hpp" />
     <ClInclude Include="emulation\gateway\gateway_config.hpp" />
     <ClInclude Include="emulation\gateway\module_runner.hpp" />
+    <ClInclude Include="emulation\gateway\module_cache_manager.hpp" />
+    <ClInclude Include="emulation\gateway\task_payload_helper.hpp" />
     <ClInclude Include="emulation\gateway\vgc_state.hpp" />
+    <ClInclude Include="emulation\gateway\riot_utils.hpp" />
     <ClInclude Include="security\encryption.hpp" />
     <ClInclude Include="session\session.hpp" />
     <ClInclude Include="structs\riotgames.hpp" />
