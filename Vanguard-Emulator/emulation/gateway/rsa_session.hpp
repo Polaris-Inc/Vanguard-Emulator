@@ -18,6 +18,7 @@ public:
 
     std::vector<uint8_t> export_public_key() const;
     std::vector<uint8_t> export_private_key() const;
+    std::string export_public_key_spki_b64() const;
     bool import_public_key(const std::vector<uint8_t>& blob);
     bool import_private_key(const std::vector<uint8_t>& blob);
 

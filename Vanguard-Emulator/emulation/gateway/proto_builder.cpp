@@ -180,8 +180,7 @@ std::vector<uint8_t> encode_auth_request(const VgAuthRequest& req) {
     }
     write_field_str(buf, 8, req.game_id);
     write_field_varint(buf, 9, req.boot_state);
-    for (size_t i = 0; i < 10; i++)
-        write_field_bytes(buf, 10, (const uint8_t*)"0", 1);
+    write_field_vec(buf, 10, req.ephemeral_identifiers);
     {
         auto cpu = encode_cpu_info("GenuineIntel", "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz");
         write_field_submsg(buf, 11, cpu);

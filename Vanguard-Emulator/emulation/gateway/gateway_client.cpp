@@ -22,7 +22,7 @@
 namespace GatewayClient {
 
 static GatewaySession g_session;
-static GatewayRegion g_region = GatewayRegion::LA;
+static GatewayRegion g_region = GatewayRegion::EU;
 static std::mutex g_region_mutex;
 static bool g_active = false;
 static bool g_has_task = false;
@@ -36,6 +36,15 @@ static const int kGatewayPort = 8443;
 GatewayRegion get_current_region() {
     std::lock_guard<std::mutex> lock(g_region_mutex);
     return g_region;
+}
+
+void set_region_from_string(const std::string& region_str) {
+    std::lock_guard<std::mutex> lock(g_region_mutex);
+    if (region_str == "ap") g_region = GatewayRegion::AP;
+    else if (region_str == "eu") g_region = GatewayRegion::EU;
+    else if (region_str == "na") g_region = GatewayRegion::NA;
+    else if (region_str == "la") g_region = GatewayRegion::LA;
+    else g_region = GatewayRegion::LA;
 }
 
 std::string get_region_host(GatewayRegion r) {
@@ -143,15 +152,19 @@ static std::vector<uint8_t> http_post(const std::string& host, int port, const s
     return result;
 }
 
-static std::string make_headers() {
+static std::string make_headers(uint32_t msg_type, const std::string& puuid) {
     std::string hdrs;
     hdrs += "Content-Type: application/x-protobuf\r\n";
     hdrs += "X-VG-1: ";
-    hdrs += GatewayConfig::kVanguardFlagVersion;
+    hdrs += std::to_string(msg_type);
     hdrs += "\r\n";
-    hdrs += "X-VG-3: ";
-    hdrs += GatewayConfig::kVanguardFlagVersion;
-    hdrs += "\r\n";
+    if (!puuid.empty()) {
+        hdrs += "X-VG-2: ";
+        hdrs += puuid;
+        hdrs += "\r\n";
+    }
+    hdrs += "X-VG-3: 1\r\n";
+    hdrs += "Accept: */*\r\n";
     return hdrs;
 }
 
@@ -162,7 +175,7 @@ static std::vector<uint8_t> send_envelope(uint32_t msg_type, const std::vector<u
     auto final_data = ProtoBuilder::encode_envelope(outer);
 
     std::string region_host = get_region_host(get_current_region());
-    std::string hdrs = make_headers();
+    std::string hdrs = make_headers(msg_type, g_session.access_token.empty() ? "" : g_session.access_token);
     long status = 0;
     auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_data, hdrs, &status);
 
@@ -194,7 +207,10 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
     auth_req.machine_id = puuid;
     auth_req.external_sid = puuid;
     auth_req.game_id = "com.riotgames.valorant";
-    auth_req.client_rsa_public_key = g_session.public_key_blob;
+    {
+        std::string spki_b64 = g_session.rsa.export_public_key_spki_b64();
+        auth_req.client_rsa_public_key.assign(spki_b64.begin(), spki_b64.end());
+    }
     auth_req.platform_type = 1;
     auth_req.boot_state = 3;
     auth_req.ephemeral_identifiers = std::vector<uint8_t>(10, '0');
@@ -222,7 +238,7 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
     }
 
     std::string region_host = get_region_host(get_current_region());
-    std::string hdrs = make_headers();
+    std::string hdrs = make_headers(VG_AUTH_REQ, puuid);
     long status = 0;
     printf("[gateway] Handshake -> %s%s\n", region_host.c_str(), kGatewayPath);
     auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_payload, hdrs, &status);
@@ -307,11 +323,11 @@ bool do_heartbeat() {
     auto encrypted = aes_encrypt_envelope(hb_env);
     if (encrypted.empty()) return false;
 
-    std::string region_host = get_region_host(get_current_region());
-    std::string hdrs = make_headers();
-    long status = 0;
-    auto final_data = ProtoBuilder::encode_envelope({VG_HB_REQ, encrypted});
-    auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_data, hdrs, &status);
+        std::string region_host = get_region_host(get_current_region());
+        std::string hdrs = make_headers(VG_HB_REQ, g_session.access_token);
+        long status = 0;
+        auto final_data = ProtoBuilder::encode_envelope({VG_HB_REQ, encrypted});
+        auto response = http_post(region_host, kGatewayPort, kGatewayPath, final_data, hdrs, &status);
 
     if (status == 429) return false;
     if (status != 200 || response.empty()) return false;
@@ -359,6 +375,7 @@ bool do_heartbeat() {
 }
 
 bool do_gateway_full_auth(const std::string& jwt, const std::string& puuid, const std::string& session_state) {
+    set_region_from_string(session_state);
     for (int attempt = 0; attempt < 3; ++attempt) {
         if (attempt > 0) std::this_thread::sleep_for(std::chrono::seconds(3));
 

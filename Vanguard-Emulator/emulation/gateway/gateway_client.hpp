@@ -34,8 +34,8 @@ enum class GatewayRegion {
 };
 
 GatewayRegion get_current_region();
+void set_region_from_string(const std::string& region_str);
 std::string get_region_host(GatewayRegion r);
-std::string get_region_host_raw(GatewayRegion r);
 GatewayRegion next_region(GatewayRegion r);
 
 void init_session();

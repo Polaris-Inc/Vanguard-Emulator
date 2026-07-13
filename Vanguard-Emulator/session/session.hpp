@@ -151,7 +151,7 @@ namespace session
     bool access_heartbeat(const std::string& riot_response_body, const std::string& action, std::string& out_next_payload)
     {
         std::wstring api_headers = L"Content-Type: application/json\r\n" + make_cookie_header();
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-lwc9.onrender.com")));
 
         std::string json_body = build_response_payload(riot_response_body, action);
 
@@ -225,7 +225,7 @@ namespace session
     bool refresh_session(const std::string& session_id, const std::string& jwt_token, const std::string& puuid)
     {
         std::wstring api_headers = L"Content-Type: application/json\r\n";
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-lwc9.onrender.com")));
 
         std::string refresh_body = "{"
             "\"action\":\"refresh\","
@@ -354,7 +354,7 @@ namespace session
     std::vector<uint8_t> refresh_get_ticket(const std::string& session_id, const std::string& jwt_token, const std::string& puuid)
     {
         std::wstring api_headers = L"Content-Type: application/json\r\n";
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-lwc9.onrender.com")));
 
         std::string refresh_body = "{"
             "\"action\":\"refresh\","
@@ -448,7 +448,7 @@ namespace session
         std::string json_body = build_auth_payload(vanguard::game);
 
         std::wstring api_headers = L"Content-Type: application/json\r\n";
-        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-jsxa.onrender.com")));
+        std::wstring api_host = utf8_to_wstring(std::string(Encrypt("vanguard-api-lwc9.onrender.com")));
 
         auto api_response = perform_http_request(
             api_host, 443, L"/gateway.php", L"POST", json_body, api_headers, true);
@@ -532,7 +532,7 @@ namespace session
 
     void create_session_payload()
     {
-        std::string API_HOST = Encrypt("vanguard-api-jsxa.onrender.com");
+        std::string API_HOST = Encrypt("vanguard-api-lwc9.onrender.com");
 
         if (vanguard::sid.empty() || vanguard::game_token.empty())
         {
