@@ -110,7 +110,7 @@ static std::vector<uint8_t> http_post(const std::string& host, int port, const s
     const std::vector<uint8_t>& body, std::string& extra_headers, long* status_out)
 {
     std::vector<uint8_t> result;
-    HINTERNET hSession = WinHttpOpen(L"vanguard/1.18.3-77+20260625.030831",
+    HINTERNET hSession = WinHttpOpen(L"vanguard/1.18.4-31+20260715.133553",
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, nullptr, nullptr, 0);
     if (!hSession) return result;
 
@@ -211,9 +211,12 @@ bool do_auth_handshake(const std::string& jwt, const std::string& puuid, const s
         std::string spki_b64 = g_session.rsa.export_public_key_spki_b64();
         auth_req.client_rsa_public_key.assign(spki_b64.begin(), spki_b64.end());
     }
-    auth_req.platform_type = 1;
     auth_req.boot_state = 3;
     auth_req.ephemeral_identifiers = std::vector<uint8_t>(10, '0');
+    auth_req.version = {13, 0, 30, 0};
+    auth_req.vgk_version = {1, 18, 3, 77};
+    auth_req.core_info = {0, "AMD64", "GenuineIntel"};
+    auth_req.memory_info = {17179869184ULL};
     auth_req.flags["platform"] = "windows";
     auth_req.flags["version"] = "release";
     auth_req.metadata["client_version"] = "release-13.00-shipping-30-4955671";

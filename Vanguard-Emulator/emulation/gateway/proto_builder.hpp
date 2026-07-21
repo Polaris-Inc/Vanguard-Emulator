@@ -9,27 +9,27 @@
 
 enum VgMsgType : uint32_t {
     VG_INVALID_MSG_TYPE = 0,
-    VG_EMPTY = 1,
-    VG_ERROR_RESPONSE = 2,
-    VG_AUTH_REQ = 3,
-    VG_ACCESS_REQ = 4,
-    VG_TOKEN_RESP = 5,
-    VG_MODULES_RESP = 6,
-    VG_HB_REQ = 7,
-    VG_HB_RESP = 8,
-    VG_TASK_RESULT = 9,
-    VG_DISCONNECT = 10,
+    VG_AUTH_REQ = 1,
+    VG_TOKEN_RESP = 2,
+    VG_ACCESS_REQ = 3,
+    VG_MODULES_RESP = 4,
+    VG_TASK_RESULT = 5,
+    VG_HB_REQ = 6,
+    VG_HB_RESP = 7,
+    VG_DISCONNECT = 8,
+    VG_ERROR_RESPONSE = 9,
+    VG_EMPTY = 10,
     VG_TASK_RESULT_RESPONSE = 11,
 };
 
 inline const char* vg_type_name(uint32_t t) {
     switch (t) {
-        case 0: return "INVALID_MESSAGE_TYPE"; case 1: return "EMPTY";
-        case 2: return "ERROR_RESPONSE"; case 3: return "AUTH_REQUEST";
-        case 4: return "ACCESS_REQUEST"; case 5: return "TOKEN_RESPONSE";
-        case 6: return "MODULES_RESPONSE"; case 7: return "HEARTBEAT_REQUEST";
-        case 8: return "HEARTBEAT_RESPONSE"; case 9: return "TASK_RESULT_REQUEST";
-        case 10: return "CLIENT_DISCONNECT_REQUEST"; case 11: return "TASK_RESULT_RESPONSE";
+        case 0: return "INVALID_MESSAGE_TYPE"; case 1: return "AUTH_REQUEST";
+        case 2: return "TOKEN_RESPONSE"; case 3: return "ACCESS_REQUEST";
+        case 4: return "MODULES_REQUEST"; case 5: return "TASK_RESULT_REQUEST";
+        case 6: return "HEARTBEAT_REQUEST"; case 7: return "HEARTBEAT_RESPONSE";
+        case 8: return "CLIENT_DISCONNECT_REQUEST"; case 9: return "ERROR_RESPONSE";
+        case 10: return "EMPTY"; case 11: return "TASK_RESULT_RESPONSE";
         default: return "UNKNOWN";
     }
 }
@@ -39,18 +39,66 @@ struct VgEnvelope {
     std::vector<uint8_t> payload;
 };
 
+struct VgVersion {
+    uint32_t a = 0, b = 0, c = 0, d = 0;
+};
+
+struct VgCoreInfo {
+    uint32_t index = 0;
+    std::string architecture;
+    std::string brand;
+};
+
+struct VgMemoryInfo {
+    uint64_t total = 0;
+};
+
+struct VgCpuInfo {
+    std::string brand;
+    std::string model;
+};
+
+struct VgGpuInfo {
+    std::string brand;
+    std::string model;
+};
+
+struct VgModule {
+    std::string id;
+    std::string cdn_url;
+};
+
+struct VgTask {
+    std::string id;
+    std::vector<uint8_t> data;
+};
+
+struct VgTaskPerformance {
+    double cpu_usage = 0.0;
+    double memory_usage = 0.0;
+};
+
+struct VgTaskToken {
+    std::string token;
+};
+
+struct VgExecutionFrequencyLimit {
+    uint32_t max_executions = 0;
+    uint32_t window_ms = 0;
+    uint32_t cooldown_ms = 0;
+};
+
 struct VgAuthRequest {
-    std::string machine_id;                              // field 1  - bytes
-    // os_info is encoded inline, no separate struct       // field 2  - OsInfo sub-msg
-    uint32_t platform_type = 1;                          // field 3  - varint
-    std::string game_token;                              // field 4  - string
+    std::string machine_id;                              // field 2  - string
+    std::string game_token;                              // field 4  - bytes/string
     std::vector<uint8_t> client_rsa_public_key;          // field 5  - bytes
-    // game_version encoded inline                         // field 6  - Version sub-msg
-    // vanguard_version encoded inline                     // field 7  - Version sub-msg
+    VgVersion version;                                   // field 6  - Version sub-msg
+    VgVersion vgk_version;                               // field 7  - Version sub-msg
     std::string game_id = "com.riotgames.valorant";      // field 8  - string
     uint32_t boot_state = 3;                             // field 9  - varint
-    std::vector<uint8_t> ephemeral_identifiers;          // field 10 - repeated bytes
-    // cpu_info encoded inline                             // field 11 - CpuInfo sub-msg
+    std::vector<uint8_t> ephemeral_identifiers;          // field 10 - bytes
+    VgCoreInfo core_info;                                // field 11 - CoreInfo sub-msg
+    VgMemoryInfo memory_info;                            // field 12 - MemoryInfo sub-msg
     std::string external_sid;                            // field 13 - string
     std::map<std::string, std::string> flags;            // field 14 - map entry, repeated
     std::map<std::string, std::string> metadata;         // field 15 - map entry, repeated
@@ -98,28 +146,6 @@ struct VgTaskResultRequest {
 
 struct VgDisconnectRequest {
     std::string access_token;
-};
-
-struct VgModule {
-    std::string id;
-    std::string arguments;
-    std::string cdn_url;
-};
-
-struct VgModuleResult {
-    std::string commit_sha;
-};
-
-struct VgModulesResponse {
-    std::vector<VgModule> modules;
-};
-
-struct VgTask {
-    std::string id;
-};
-
-struct VgTaskPerformance {
-    std::vector<uint8_t> data;
 };
 
 namespace ProtoBuilder {

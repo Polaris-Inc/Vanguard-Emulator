@@ -5,8 +5,8 @@
 namespace GatewayConfig {
 
 inline constexpr bool kRgOaepSha512 = true;
-inline constexpr const char kVanguardUserAgent[] = "vanguard/1.18.3-77+20260625.030831";
-inline constexpr const char kVanguardFlagVersion[] = "1.18.3";
+inline constexpr const char kVanguardUserAgent[] = "vanguard/1.18.4-31+20260715.133553";
+inline constexpr const char kVanguardFlagVersion[] = "1.18.4";
 inline constexpr int kVanguardVersionMajor = 1;
 inline constexpr int kVanguardVersionMinor = 18;
 inline constexpr int kVanguardVersionPatch = 3;

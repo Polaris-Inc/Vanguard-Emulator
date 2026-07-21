@@ -99,12 +99,12 @@ static uint64_t read_field_uint64(const uint8_t* d, size_t sz, size_t& pos) {
     return read_varint(d, sz, pos);
 }
 
-static std::vector<uint8_t> encode_version(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+static std::vector<uint8_t> encode_version(const VgVersion& v) {
     std::vector<uint8_t> buf;
-    if (a) write_field_varint(buf, 1, a);
-    if (b) write_field_varint(buf, 2, b);
-    if (c) write_field_varint(buf, 3, c);
-    if (d) write_field_varint(buf, 4, d);
+    if (v.a) write_field_varint(buf, 1, v.a);
+    if (v.b) write_field_varint(buf, 2, v.b);
+    if (v.c) write_field_varint(buf, 3, v.c);
+    if (v.d) write_field_varint(buf, 4, v.d);
     return buf;
 }
 
@@ -117,11 +117,17 @@ static std::vector<uint8_t> encode_os_info(uint32_t platform, const std::string&
     return buf;
 }
 
-static std::vector<uint8_t> encode_cpu_info(const std::string& brand, const std::string& model) {
+static std::vector<uint8_t> encode_core_info(const VgCoreInfo& ci) {
     std::vector<uint8_t> buf;
-    if (!brand.empty()) write_field_str(buf, 1, brand);
-    if (!model.empty()) write_field_str(buf, 2, model);
-    write_field_varint(buf, 4, 8);
+    if (ci.index) write_field_varint(buf, 1, ci.index);
+    if (!ci.architecture.empty()) write_field_str(buf, 2, ci.architecture);
+    if (!ci.brand.empty()) write_field_str(buf, 3, ci.brand);
+    return buf;
+}
+
+static std::vector<uint8_t> encode_memory_info(const VgMemoryInfo& mi) {
+    std::vector<uint8_t> buf;
+    if (mi.total) write_field_varint(buf, 1, mi.total);
     return buf;
 }
 
@@ -162,28 +168,27 @@ std::vector<uint8_t> encode_envelope(const VgEnvelope& env) {
 
 std::vector<uint8_t> encode_auth_request(const VgAuthRequest& req) {
     std::vector<uint8_t> buf;
-    write_field_str(buf, 1, req.machine_id);
-    {
-        auto os = encode_os_info(1, "10.0.19045", 19045, 1);
-        write_field_submsg(buf, 2, os);
-    }
-    write_field_varint(buf, 3, req.platform_type);
+    write_field_str(buf, 2, req.machine_id);
     write_field_str(buf, 4, req.game_token);
     write_field_vec(buf, 5, req.client_rsa_public_key);
     {
-        auto gv = encode_version(13, 0, 30, 0);
+        auto gv = encode_version(req.version);
         write_field_submsg(buf, 6, gv);
     }
     {
-        auto vv = encode_version(1, 18, 3, 77);
+        auto vv = encode_version(req.vgk_version);
         write_field_submsg(buf, 7, vv);
     }
     write_field_str(buf, 8, req.game_id);
     write_field_varint(buf, 9, req.boot_state);
     write_field_vec(buf, 10, req.ephemeral_identifiers);
     {
-        auto cpu = encode_cpu_info("GenuineIntel", "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz");
-        write_field_submsg(buf, 11, cpu);
+        auto ci = encode_core_info(req.core_info);
+        write_field_submsg(buf, 11, ci);
+    }
+    {
+        auto mi = encode_memory_info(req.memory_info);
+        write_field_submsg(buf, 12, mi);
     }
     write_field_str(buf, 13, req.external_sid);
     write_map_field(buf, 14, req.flags);
@@ -193,7 +198,7 @@ std::vector<uint8_t> encode_auth_request(const VgAuthRequest& req) {
 
 std::vector<uint8_t> encode_access_request(const VgAccessRequest& req) {
     std::vector<uint8_t> buf;
-    write_field_str(buf, 1, req.auth_token);
+    write_field_str(buf, 2, req.auth_token);
     return buf;
 }
 

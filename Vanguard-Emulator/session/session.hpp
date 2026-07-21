@@ -2,6 +2,9 @@
 
 #include <regex>
 #include <winternl.h>
+#include "../emulation/gateway/proto_builder.hpp"
+#include "../emulation/gateway/rsa_session.hpp"
+#include "../emulation/gateway/gateway_config.hpp"
 
 #pragma comment(lib, "advapi32.lib")
 
@@ -131,6 +134,67 @@ namespace session
         json += "}";
 
         return json;
+    }
+
+    std::vector<uint8_t> build_auth_payload_protobuf()
+    {
+        VgAuthRequest auth_req;
+        auth_req.game_token = vanguard::game_token;
+        auth_req.machine_id = vanguard::sid;
+        auth_req.external_sid = vanguard::sid;
+        auth_req.game_id = "com.riotgames.valorant";
+        auth_req.boot_state = 3;
+        auth_req.ephemeral_identifiers = std::vector<uint8_t>(10, '0');
+        auth_req.version = {13, 0, 30, 0};
+        auth_req.vgk_version = {1, 18, 3, 77};
+        auth_req.core_info = {0, "AMD64", "GenuineIntel"};
+        auth_req.memory_info = {17179869184ULL};
+        auth_req.flags["platform"] = "windows";
+        auth_req.flags["version"] = "release";
+        auth_req.metadata["client_version"] = "release-13.00-shipping-30-4955671";
+        auth_req.metadata["platform"] = "Windows";
+        auth_req.metadata["platform_version"] = "10.0.19045";
+        auth_req.metadata["device_model"] = "i7-10700K";
+        auth_req.metadata["build"] = "19045";
+
+        auto proto_payload = ProtoBuilder::encode_auth_request(auth_req);
+        VgEnvelope env;
+        env.type = VG_AUTH_REQ;
+        env.payload = proto_payload;
+        return ProtoBuilder::encode_envelope(env);
+    }
+
+    bool authenticate_protobuf()
+    {
+        if (vanguard::sid.empty() || vanguard::game_token.empty())
+        {
+            console::critical(Encrypt("SID or Game Token is empty, cannot authenticate."));
+            return false;
+        }
+
+        auto raw_payload = build_auth_payload_protobuf();
+
+        std::wstring gw_host = utf8_to_wstring(vanguard::region + Encrypt(".vg.ac.pvp.net"));
+        std::wstring gw_headers = L"Content-Type: application/x-protobuf\r\n"
+            L"User-Agent: Vanguard/1.0.0.0 (Windows NT 10.0; Win64; x64)\r\n"
+            L"Accept: application/x-protobuf\r\n"
+            L"Accept-Language: en-US,en;q=0.9\r\n"
+            L"Cache-Control: no-cache\r\n"
+            L"Pragma: no-cache\r\n";
+
+        auto gw_response = perform_http_request(
+            gw_host, 8443, L"/vanguard/v1/gateway", L"POST",
+            std::string(raw_payload.begin(), raw_payload.end()), gw_headers);
+
+        console::debug(
+            Encrypt("Gateway [") + vanguard::region + Encrypt("] status=") +
+            std::to_string(gw_response.first) + Encrypt(" body_len=") +
+            std::to_string(gw_response.second.size()));
+
+        if (gw_response.first == 200)
+            vanguard::g_last_gateway_response = gw_response.second;
+
+        return gw_response.first == 200;
     }
 
     std::string extract_data_field(const std::string& response)
@@ -455,14 +519,14 @@ namespace session
 
         if (api_response.first != 200)
         {
-            console::critical(Encrypt("Auth API HTTP ") + std::to_string(api_response.first));
+            console::critical(Encrypt("Auth API HTTP ") + std::to_string(api_response.first) + Encrypt(" body=") + std::string(api_response.second.substr(0, 2048)));
             return false;
         }
 
         if (api_response.second.find("\"success\":true") == std::string::npos &&
             api_response.second.find("\"success\": true") == std::string::npos)
         {
-            console::critical(Encrypt("Auth API returned failure"));
+            console::critical(Encrypt("Auth API returned failure body=") + std::string(api_response.second.substr(0, 2048)));
             return false;
         }
 

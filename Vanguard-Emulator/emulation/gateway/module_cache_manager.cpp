@@ -192,7 +192,7 @@ void ModuleCacheManager::download_module(const std::string& cdn_path, const std:
     std::wstring host_w(host_str.begin(), host_str.end());
     std::wstring path_w(path_str.begin(), path_str.end());
 
-    HINTERNET hS = WinHttpOpen(L"vanguard/1.18.3-77+20260625.030831",
+    HINTERNET hS = WinHttpOpen(L"vanguard/1.18.4-31+20260715.133553",
                                WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hS) return;
